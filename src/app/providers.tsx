@@ -1,17 +1,13 @@
-
 "use client";
 
 import type { ReactNode } from "react";
 import { SocketProvider } from "../components/providers/SocketProvider";
+import { AuthProvider } from "../components/providers/AuthProvider";
 
-export default function Providers({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export default function Providers({ children }: { children: ReactNode }) {
   return (
     <SocketProvider>
-      {children}
+      <AuthProvider>{children}</AuthProvider>
     </SocketProvider>
   );
 }

@@ -1,63 +1,68 @@
-
 "use client";
 
 import {
   createContext,
   useContext,
   useEffect,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
-import type { Socket } from "socket.io-client";
-import { getSocket } from "../../lib/socket";
+import { connectSocket, getSocket } from "../../lib/socket";
+import { readStoredToken } from "../../lib/session";
 
-const SocketContext = createContext<Socket | null>(null);
+interface SocketContextValue {
+  isConnected: boolean;
+}
 
-export function SocketProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  const [socket, setSocket] = useState<Socket | null>(null);
+const SocketContext = createContext<SocketContextValue>({ isConnected: false });
+
+// Stable references so `useSyncExternalStore` is not resubscribed every render.
+const subscribeConnection = (onChange: () => void) => {
+  const instance = getSocket();
+  instance.on("connect", onChange);
+  instance.on("disconnect", onChange);
+  return () => {
+    instance.off("connect", onChange);
+    instance.off("disconnect", onChange);
+  };
+};
+
+const getConnectedSnapshot = () => getSocket().connected;
+const getConnectedServerSnapshot = () => false;
+
+export function SocketProvider({ children }: { children: ReactNode }) {
+  const isConnected = useSyncExternalStore(
+    subscribeConnection,
+    getConnectedSnapshot,
+    getConnectedServerSnapshot,
+  );
 
   useEffect(() => {
-    const currentSocket = getSocket();
-
-    const handleConnect = () => {
-      console.log("Connected:", currentSocket.id);
-      setSocket(currentSocket);
-    };
-
-    const handleDisconnect = (reason: string) => {
-      console.log("Disconnected:", reason);
-      setSocket(null);
-    };
+    const instance = getSocket();
 
     const handleConnectError = (error: Error) => {
-      console.error("Connection failed:", error.message);
+      console.error("Socket connection failed:", error.message);
     };
 
-    currentSocket.on("connect", handleConnect);
-    currentSocket.on("disconnect", handleDisconnect);
-    currentSocket.on("connect_error", handleConnectError);
+    instance.on("connect_error", handleConnectError);
 
-    currentSocket.connect();
+    // Restore the session token (if any) before the handshake so a returning
+    // user is authenticated as soon as the socket connects. This drives an
+    // external system, so it belongs in an effect.
+    connectSocket(readStoredToken());
 
     return () => {
-      currentSocket.off("connect", handleConnect);
-      currentSocket.off("disconnect", handleDisconnect);
-      currentSocket.off("connect_error", handleConnectError);
-      currentSocket.disconnect();
+      instance.off("connect_error", handleConnectError);
     };
   }, []);
 
   return (
-    <SocketContext.Provider value={socket}>
+    <SocketContext.Provider value={{ isConnected }}>
       {children}
     </SocketContext.Provider>
   );
 }
 
-export function useSocket() {
+export function useSocket(): SocketContextValue {
   return useContext(SocketContext);
 }
