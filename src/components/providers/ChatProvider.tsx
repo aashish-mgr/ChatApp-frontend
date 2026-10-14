@@ -24,7 +24,13 @@ interface RoomHistory {
   nextCursor: string | null;
   hasMore: boolean;
   isLoading: boolean;
-  loaded: boolean;
+}
+
+/** What a consumer needs to render one room's history. */
+export interface RoomHistoryView {
+  messages: Message[];
+  hasMore: boolean;
+  isLoading: boolean;
 }
 
 type RoomsStatus = "loading" | "ready" | "error";
@@ -32,18 +38,15 @@ type RoomsStatus = "loading" | "ready" | "error";
 interface ChatContextValue {
   rooms: Room[];
   roomsStatus: RoomsStatus;
-  activeRoomId: string | null;
-  activeRoom: Room | null;
-  messages: Message[];
-  hasMore: boolean;
-  isLoadingMessages: boolean;
   isUserOnline: (userId: string) => boolean;
   refreshRooms: () => Promise<void>;
-  selectRoom: (room: Room) => void;
-  openRoomWithUser: (target: User) => Promise<void>;
-  closeRoom: () => void;
-  loadOlder: () => Promise<void>;
-  sendMessage: (content: string) => Promise<void>;
+  /** Marks a room as the live one: joins its channel and loads its history. */
+  activateRoom: (roomId: string) => void;
+  getRoomHistory: (roomId: string) => RoomHistoryView;
+  /** Opens (or creates) the 1:1 room with a user and returns its id. */
+  openRoomWithUser: (target: User) => Promise<string>;
+  loadOlder: (roomId: string) => Promise<void>;
+  sendMessage: (roomId: string, content: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
 }
 
@@ -54,7 +57,6 @@ const emptyHistory = (): RoomHistory => ({
   nextCursor: null,
   hasMore: false,
   isLoading: false,
-  loaded: false,
 });
 
 const othersIn = (room: Room, currentUserId: string | undefined): User[] =>
@@ -74,14 +76,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // Rooms whose initial history has been requested, so we never fetch twice.
   const requestedRooms = useRef<Set<string>>(new Set());
-  // Mirror of `rooms` for effects that must not re-run when a message arrives.
-  const roomsRef = useRef<Room[]>([]);
 
   const currentUserId = user?.id;
-
-  useEffect(() => {
-    roomsRef.current = rooms;
-  }, [rooms]);
 
   const refreshRooms = useCallback(async () => {
     try {
@@ -146,7 +142,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           nextCursor: res.nextCursor ?? null,
           hasMore: Boolean(res.hasMore),
           isLoading: false,
-          loaded: true,
         },
       }));
     } catch {
@@ -158,61 +153,67 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loadOlder = useCallback(async () => {
-    if (!activeRoomId) return;
+  const activateRoom = useCallback(
+    (roomId: string) => {
+      setActiveRoomId(roomId);
+      void loadMessages(roomId);
+    },
+    [loadMessages],
+  );
 
-    const current = history[activeRoomId];
-    if (!current || current.isLoading || !current.hasMore || !current.nextCursor) {
-      return;
-    }
-
-    const cursor = current.nextCursor;
-    setHistory((prev) => ({
-      ...prev,
-      [activeRoomId]: { ...prev[activeRoomId], isLoading: true },
-    }));
-
-    try {
-      const socket = await whenConnected(getSocket());
-      const res = await request(socket, "message:history", {
-        roomId: activeRoomId,
-        cursor,
-        limit: HISTORY_PAGE_SIZE,
-      });
-
-      if (res.status !== 200 || !res.messages) {
-        setHistory((prev) => ({
-          ...prev,
-          [activeRoomId]: { ...prev[activeRoomId], isLoading: false },
-        }));
+  const loadOlder = useCallback(
+    async (roomId: string) => {
+      const current = history[roomId];
+      if (
+        !current ||
+        current.isLoading ||
+        !current.hasMore ||
+        !current.nextCursor
+      ) {
         return;
       }
 
-      const older = [...res.messages].reverse();
+      const cursor = current.nextCursor;
       setHistory((prev) => ({
         ...prev,
-        [activeRoomId]: {
-          messages: [...older, ...prev[activeRoomId].messages],
-          nextCursor: res.nextCursor ?? null,
-          hasMore: Boolean(res.hasMore),
-          isLoading: false,
-          loaded: true,
-        },
+        [roomId]: { ...prev[roomId], isLoading: true },
       }));
-    } catch {
-      setHistory((prev) => ({
-        ...prev,
-        [activeRoomId]: { ...prev[activeRoomId], isLoading: false },
-      }));
-    }
-  }, [activeRoomId, history]);
 
-  const selectRoom = useCallback(
-    (room: Room) => {
-      setActiveRoomId(room.id);
-      void loadMessages(room.id);
+      try {
+        const socket = await whenConnected(getSocket());
+        const res = await request(socket, "message:history", {
+          roomId,
+          cursor,
+          limit: HISTORY_PAGE_SIZE,
+        });
+
+        if (res.status !== 200 || !res.messages) {
+          setHistory((prev) => ({
+            ...prev,
+            [roomId]: { ...prev[roomId], isLoading: false },
+          }));
+          return;
+        }
+
+        const older = [...res.messages].reverse();
+        setHistory((prev) => ({
+          ...prev,
+          [roomId]: {
+            ...prev[roomId],
+            messages: [...older, ...prev[roomId].messages],
+            nextCursor: res.nextCursor ?? null,
+            hasMore: Boolean(res.hasMore),
+            isLoading: false,
+          },
+        }));
+      } catch {
+        setHistory((prev) => ({
+          ...prev,
+          [roomId]: { ...prev[roomId], isLoading: false },
+        }));
+      }
     },
-    [loadMessages],
+    [history],
   );
 
   const openRoomWithUser = useCallback(
@@ -225,7 +226,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       const roomId = res.roomId;
       if (user) {
-        // Show the conversation immediately; refreshRooms() reconciles with the server.
+        // Show the conversation immediately; refreshRooms() reconciles.
         setRooms((prev) =>
           prev.some((room) => room.id === roomId)
             ? prev
@@ -241,18 +242,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         );
       }
 
-      setActiveRoomId(roomId);
-      void loadMessages(roomId);
       void refreshRooms();
+      return roomId;
     },
-    [user, loadMessages, refreshRooms],
+    [user, refreshRooms],
   );
 
-  const closeRoom = useCallback(() => setActiveRoomId(null), []);
-
   const sendMessage = useCallback(
-    async (content: string) => {
-      const roomId = activeRoomId;
+    async (roomId: string, content: string) => {
       const trimmed = content.trim();
       if (!roomId || !trimmed) return;
 
@@ -261,11 +258,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         roomId,
         content: trimmed,
       });
+
       if (res.status !== 200) {
         throw new Error(res.message || "Message could not be sent.");
       }
     },
-    [activeRoomId],
+    [],
   );
 
   const deleteMessage = useCallback(async (messageId: string) => {
@@ -275,6 +273,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       throw new Error(res.message || "Message could not be deleted.");
     }
   }, []);
+
+  const getRoomHistory = useCallback(
+    (roomId: string): RoomHistoryView => {
+      const room = history[roomId];
+      return {
+        messages: room?.messages ?? [],
+        hasMore: room?.hasMore ?? false,
+        isLoading: room?.isLoading ?? false,
+      };
+    },
+    [history],
+  );
+
+  const isUserOnline = useCallback(
+    (userId: string) => isConnected && onlineUserIds.has(userId),
+    [isConnected, onlineUserIds],
+  );
 
   // Load the room list and online-user state whenever a session becomes
   // available (and on reconnect). This is the "synchronize with an external
@@ -288,22 +303,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     void refreshPresence();
   }, [user, isConnected, refreshRooms, refreshPresence]);
 
-  // Rejoin the active chat room on connect/reconnect so `message:new` broadcasts
-  // reach us. `room:open` is the backend's join mechanism.
+  // Join the active room's channel on connect/reconnect so `message:new`
+  // broadcasts reach us. `room:open` is the backend's join mechanism. Keyed on
+  // the peer id (not the room list) so reordering the list never re-joins.
+  const activeRoom = activeRoomId
+    ? (rooms.find((room) => room.id === activeRoomId) ?? null)
+    : null;
+  const activePeerId = activeRoom
+    ? othersIn(activeRoom, currentUserId)[0]?.id
+    : undefined;
+
   useEffect(() => {
-    if (!isConnected || !activeRoomId) return;
-
-    const room = roomsRef.current.find((item) => item.id === activeRoomId);
-    if (!room) return;
-
-    const peer = othersIn(room, currentUserId)[0];
-    if (!peer) return;
-
+    if (!isConnected || !activePeerId) return;
     void (async () => {
-      const socket = await whenConnected(getSocket());
-      await request(socket, "room:open", peer.id);
+      try {
+        const socket = await whenConnected(getSocket());
+        await request(socket, "room:open", activePeerId);
+      } catch {
+        // Reconnect will retry.
+      }
     })();
-  }, [isConnected, activeRoomId, currentUserId]);
+  }, [isConnected, activePeerId]);
 
   // Live updates from the server.
   useEffect(() => {
@@ -318,10 +338,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
         return {
           ...prev,
-          [message.roomId]: {
-            ...room,
-            messages: [...room.messages, message],
-          },
+          [message.roomId]: { ...room, messages: [...room.messages, message] },
         };
       });
 
@@ -397,30 +414,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
   }, [user, isConnected, refreshRooms]);
 
-  const activeHistory = activeRoomId ? history[activeRoomId] : undefined;
-  const activeRoom = activeRoomId
-    ? (rooms.find((room) => room.id === activeRoomId) ?? null)
-    : null;
-
-  const isUserOnline = useCallback(
-    (userId: string) => onlineUserIds.has(userId),
-    [onlineUserIds],
-  );
-
   const value = useMemo<ChatContextValue>(
     () => ({
       rooms,
       roomsStatus,
-      activeRoomId,
-      activeRoom,
-      messages: activeHistory?.messages ?? [],
-      hasMore: activeHistory?.hasMore ?? false,
-      isLoadingMessages: activeHistory?.isLoading ?? false,
       isUserOnline,
       refreshRooms,
-      selectRoom,
+      activateRoom,
+      getRoomHistory,
       openRoomWithUser,
-      closeRoom,
       loadOlder,
       sendMessage,
       deleteMessage,
@@ -428,14 +430,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [
       rooms,
       roomsStatus,
-      activeRoomId,
-      activeRoom,
-      activeHistory,
       isUserOnline,
       refreshRooms,
-      selectRoom,
+      activateRoom,
+      getRoomHistory,
       openRoomWithUser,
-      closeRoom,
       loadOlder,
       sendMessage,
       deleteMessage,

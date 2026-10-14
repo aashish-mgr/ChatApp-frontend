@@ -1,20 +1,29 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { Room } from "../../types/chat";
 import { useAuth } from "../providers/AuthProvider";
 import { useChat } from "../providers/ChatProvider";
+import { RoomListSkeleton } from "./Skeletons";
 
 function peerOf(room: Room, currentUserId: string | undefined) {
   return room.members.find((member) => member.id !== currentUserId);
 }
 
+function activeRoomIdFromPath(pathname: string | null): string | null {
+  if (!pathname || !pathname.startsWith("/chat/")) return null;
+  return pathname.slice("/chat/".length).split("/")[0] || null;
+}
+
 export function RoomList() {
   const { user } = useAuth();
-  const { rooms, roomsStatus, activeRoomId, isUserOnline, selectRoom, refreshRooms } =
-    useChat();
+  const { rooms, roomsStatus, isUserOnline, refreshRooms } = useChat();
+  const pathname = usePathname();
+  const activeRoomId = activeRoomIdFromPath(pathname);
 
   if (roomsStatus === "loading") {
-    return <p className="px-4 py-6 text-sm text-slate-500">Loading chats…</p>;
+    return <RoomListSkeleton />;
   }
 
   if (roomsStatus === "error") {
@@ -57,9 +66,8 @@ export function RoomList() {
 
         return (
           <li key={room.id}>
-            <button
-              type="button"
-              onClick={() => selectRoom(room)}
+            <Link
+              href={`/chat/${room.id}`}
               className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
                 isActive ? "bg-slate-800" : "hover:bg-slate-800/60"
               }`}
@@ -83,7 +91,7 @@ export function RoomList() {
                   {preview}
                 </span>
               </span>
-            </button>
+            </Link>
           </li>
         );
       })}

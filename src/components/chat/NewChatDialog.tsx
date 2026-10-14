@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { User } from "../../types/chat";
 import { request } from "../../lib/emit";
 import { getSocket, whenConnected } from "../../lib/socket";
@@ -11,6 +12,7 @@ interface NewChatDialogProps {
 }
 
 export function NewChatDialog({ onClose }: NewChatDialogProps) {
+  const router = useRouter();
   const { openRoomWithUser, isUserOnline } = useChat();
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<User[]>([]);
@@ -56,8 +58,9 @@ export function NewChatDialog({ onClose }: NewChatDialogProps) {
     setStartingId(target.id);
     setError(null);
     try {
-      await openRoomWithUser(target);
+      const roomId = await openRoomWithUser(target);
       onClose();
+      router.push(`/chat/${roomId}`);
     } catch (startError) {
       setError(
         startError instanceof Error
@@ -74,6 +77,9 @@ export function NewChatDialog({ onClose }: NewChatDialogProps) {
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="New chat"
         className="flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl border border-slate-800 bg-slate-900 shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >

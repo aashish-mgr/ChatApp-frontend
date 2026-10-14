@@ -1,25 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "../providers/AuthProvider";
-import { useChat } from "../providers/ChatProvider";
 import { useSocket } from "../providers/SocketProvider";
 import { RoomList } from "./RoomList";
-import { MessagePane } from "./MessagePane";
 import { NewChatDialog } from "./NewChatDialog";
 
-export function ChatShell() {
+function activeRoomIdFromPath(pathname: string | null): string | null {
+  if (!pathname || !pathname.startsWith("/chat/")) return null;
+  return pathname.slice("/chat/".length).split("/")[0] || null;
+}
+
+export function ChatShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
-  const { activeRoom } = useChat();
   const { isConnected } = useSocket();
+  const pathname = usePathname();
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
+
+  const isRoomOpen = activeRoomIdFromPath(pathname) !== null;
 
   return (
     <div className="flex h-screen w-full overflow-hidden">
       {/* Sidebar: full width on mobile until a room is open. */}
       <aside
         className={`${
-          activeRoom ? "hidden md:flex" : "flex"
+          isRoomOpen ? "hidden md:flex" : "flex"
         } w-full flex-col border-r border-slate-800 bg-slate-950 md:w-80 md:shrink-0`}
       >
         <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
@@ -46,7 +52,7 @@ export function ChatShell() {
         </header>
 
         <div className="flex items-center justify-between px-4 py-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <h2 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
             Chats
           </h2>
           <button
@@ -63,17 +69,11 @@ export function ChatShell() {
 
       {/* Main pane. */}
       <main
-        className={`${activeRoom ? "flex" : "hidden md:flex"} min-w-0 flex-1`}
+        className={`${
+          isRoomOpen ? "flex" : "hidden md:flex"
+        } min-w-0 flex-1 flex-col`}
       >
-        {activeRoom ? (
-          <MessagePane room={activeRoom} />
-        ) : (
-          <div className="flex flex-1 items-center justify-center px-6 text-center">
-            <p className="text-sm text-slate-500">
-              Select a conversation, or start a new one.
-            </p>
-          </div>
-        )}
+        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
       </main>
 
       {isNewChatOpen ? (

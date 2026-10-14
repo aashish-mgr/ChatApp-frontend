@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import type { Room } from "../../types/chat";
 import { useAuth } from "../providers/AuthProvider";
 import { useChat } from "../providers/ChatProvider";
@@ -11,28 +12,22 @@ interface MessagePaneProps {
 }
 
 export function MessagePane({ room }: MessagePaneProps) {
+  const router = useRouter();
   const { user } = useAuth();
-  const {
-    messages,
-    hasMore,
-    isLoadingMessages,
-    isUserOnline,
-    loadOlder,
-    sendMessage,
-    deleteMessage,
-    closeRoom,
-  } = useChat();
+  const { getRoomHistory, loadOlder, sendMessage, deleteMessage, isUserOnline } =
+    useChat();
 
+  const { messages, hasMore, isLoading } = getRoomHistory(room.id);
   const peer = room.members.find((member) => member.id !== user?.id);
   const peerName = peer?.username ?? "Conversation";
   const isPeerOnline = peer ? isUserOnline(peer.id) : false;
 
   return (
-    <div className="flex h-full flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
         <button
           type="button"
-          onClick={closeRoom}
+          onClick={() => router.push("/")}
           aria-label="Back to conversations"
           className="text-slate-400 transition hover:text-white md:hidden"
         >
@@ -63,11 +58,11 @@ export function MessagePane({ room }: MessagePaneProps) {
         <div className="flex justify-center border-b border-slate-800/60 py-2">
           <button
             type="button"
-            onClick={() => void loadOlder()}
-            disabled={isLoadingMessages}
+            onClick={() => void loadOlder(room.id)}
+            disabled={isLoading}
             className="text-xs font-medium text-sky-400 transition hover:text-sky-300 disabled:opacity-50"
           >
-            {isLoadingMessages ? "Loading…" : "Load older messages"}
+            {isLoading ? "Loading…" : "Load older messages"}
           </button>
         </div>
       ) : null}
@@ -75,11 +70,11 @@ export function MessagePane({ room }: MessagePaneProps) {
       <MessageList
         messages={messages}
         currentUserId={user?.id ?? ""}
-        isLoading={isLoadingMessages}
-        onDelete={deleteMessage}
+        isLoading={isLoading}
+        onDelete={(messageId) => void deleteMessage(messageId)}
       />
 
-      <Composer onSend={sendMessage} />
+      <Composer onSend={(content) => sendMessage(room.id, content)} />
     </div>
   );
 }
