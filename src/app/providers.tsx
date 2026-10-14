@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { SocketProvider } from "../components/providers/SocketProvider";
 import { AuthProvider, useAuth } from "../components/providers/AuthProvider";
+import { ToastProvider } from "../components/providers/ToastProvider";
 import { ChatProvider } from "../components/providers/ChatProvider";
 
 /**
@@ -18,7 +19,9 @@ export default function Providers({ children }: { children: ReactNode }) {
   return (
     <SocketProvider>
       <AuthProvider>
-        <ChatSession>{children}</ChatSession>
+        <ToastProvider>
+          <ChatSession>{children}</ChatSession>
+        </ToastProvider>
       </AuthProvider>
     </SocketProvider>
   );
