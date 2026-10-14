@@ -20,6 +20,15 @@ export function NewChatDialog({ onClose }: NewChatDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);
 
+  // Close on Escape while the dialog is mounted.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   // Load everyone (empty query) or search as the query changes, debounced.
   useEffect(() => {
     let cancelled = false;

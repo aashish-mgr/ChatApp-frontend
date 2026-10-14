@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Room } from "../../types/chat";
 import { useAuth } from "../providers/AuthProvider";
 import { useChat } from "../providers/ChatProvider";
+import { useToast } from "../providers/ToastProvider";
 import { MessageList } from "./MessageList";
 import { Composer } from "./Composer";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface MessagePaneProps {
   room: Room;
@@ -22,11 +25,27 @@ export function MessagePane({ room }: MessagePaneProps) {
     deleteMessage,
     isUserOnline,
   } = useChat();
+  const { toast } = useToast();
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const { messages, hasMore, isLoading } = getRoomHistory(room.id);
   const peer = room.members.find((member) => member.id !== user?.id);
   const peerName = peer?.username ?? "Conversation";
   const isPeerOnline = peer ? isUserOnline(peer.id) : false;
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    const messageId = pendingDelete;
+    setPendingDelete(null);
+    try {
+      await deleteMessage(messageId);
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : "Could not delete the message.",
+        "error",
+      );
+    }
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -78,10 +97,20 @@ export function MessagePane({ room }: MessagePaneProps) {
         currentUserId={user?.id ?? ""}
         isLoading={isLoading}
         onRetry={(messageId) => void retryMessage(room.id, messageId)}
-        onDelete={(messageId) => void deleteMessage(messageId)}
+        onDelete={(messageId) => setPendingDelete(messageId)}
       />
 
       <Composer onSend={(content) => void sendMessage(room.id, content)} />
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete message"
+        message="This message will be deleted for everyone in the conversation."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }
