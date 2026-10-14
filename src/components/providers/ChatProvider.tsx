@@ -37,6 +37,7 @@ interface ChatContextValue {
   messages: Message[];
   hasMore: boolean;
   isLoadingMessages: boolean;
+  isUserOnline: (userId: string) => boolean;
   refreshRooms: () => Promise<void>;
   selectRoom: (room: Room) => void;
   openRoomWithUser: (target: User) => Promise<void>;
@@ -67,6 +68,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [roomsStatus, setRoomsStatus] = useState<RoomsStatus>("loading");
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [history, setHistory] = useState<Record<string, RoomHistory>>({});
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   // Rooms whose initial history has been requested, so we never fetch twice.
   const requestedRooms = useRef<Set<string>>(new Set());
@@ -92,6 +96,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       setRoomsStatus("error");
+    }
+  }, []);
+
+  const refreshPresence = useCallback(async () => {
+    try {
+      const socket = await whenConnected(getSocket());
+      const res = await request(socket, "presence:list");
+
+      if (res.status === 200 && res.onlineUserIds) {
+        setOnlineUserIds(new Set(res.onlineUserIds));
+      }
+    } catch {
+      // Presence is best-effort; keep the last known state on failure.
     }
   }, []);
 
@@ -259,15 +276,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Load the room list whenever a session becomes available (and on reconnect).
-  // This is the "synchronize with an external system" case effects are for: the
-  // socket is the source of truth and the state update lands after the
-  // round-trip (never synchronously during the effect), so the rule misfires.
+  // Load the room list and online-user state whenever a session becomes
+  // available (and on reconnect). This is the "synchronize with an external
+  // system" case effects are for: the socket is the source of truth and the
+  // state update lands after the round-trip (never synchronously during the
+  // effect), so the rule misfires.
   useEffect(() => {
     if (!user || !isConnected) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshRooms();
-  }, [user, isConnected, refreshRooms]);
+    void refreshPresence();
+  }, [user, isConnected, refreshRooms, refreshPresence]);
 
   // Rejoin the active chat room on connect/reconnect so `message:new` broadcasts
   // reach us. `room:open` is the backend's join mechanism.
@@ -347,16 +366,34 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setActiveRoomId((prev) => (prev === roomId ? null : prev));
     };
 
+    const handlePresenceUpdate = ({
+      userId,
+      online,
+    }: {
+      userId: string;
+      online: boolean;
+    }) => {
+      setOnlineUserIds((prev) => {
+        if (online === prev.has(userId)) return prev;
+        const next = new Set(prev);
+        if (online) next.add(userId);
+        else next.delete(userId);
+        return next;
+      });
+    };
+
     socket.on("message:new", handleNewMessage);
     socket.on("message:deleted", handleDeletedMessage);
     socket.on("room:new", handleNewRoom);
     socket.on("room:deleted", handleDeletedRoom);
+    socket.on("presence:update", handlePresenceUpdate);
 
     return () => {
       socket.off("message:new", handleNewMessage);
       socket.off("message:deleted", handleDeletedMessage);
       socket.off("room:new", handleNewRoom);
       socket.off("room:deleted", handleDeletedRoom);
+      socket.off("presence:update", handlePresenceUpdate);
     };
   }, [user, isConnected, refreshRooms]);
 
@@ -364,6 +401,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const activeRoom = activeRoomId
     ? (rooms.find((room) => room.id === activeRoomId) ?? null)
     : null;
+
+  const isUserOnline = useCallback(
+    (userId: string) => onlineUserIds.has(userId),
+    [onlineUserIds],
+  );
 
   const value = useMemo<ChatContextValue>(
     () => ({
@@ -374,6 +416,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       messages: activeHistory?.messages ?? [],
       hasMore: activeHistory?.hasMore ?? false,
       isLoadingMessages: activeHistory?.isLoading ?? false,
+      isUserOnline,
       refreshRooms,
       selectRoom,
       openRoomWithUser,
@@ -388,6 +431,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       activeRoomId,
       activeRoom,
       activeHistory,
+      isUserOnline,
       refreshRooms,
       selectRoom,
       openRoomWithUser,

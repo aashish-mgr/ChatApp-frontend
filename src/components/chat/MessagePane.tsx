@@ -16,6 +16,7 @@ export function MessagePane({ room }: MessagePaneProps) {
     messages,
     hasMore,
     isLoadingMessages,
+    isUserOnline,
     loadOlder,
     sendMessage,
     deleteMessage,
@@ -24,6 +25,7 @@ export function MessagePane({ room }: MessagePaneProps) {
 
   const peer = room.members.find((member) => member.id !== user?.id);
   const peerName = peer?.username ?? "Conversation";
+  const isPeerOnline = peer ? isUserOnline(peer.id) : false;
 
   return (
     <div className="flex h-full flex-1 flex-col">
@@ -36,10 +38,25 @@ export function MessagePane({ room }: MessagePaneProps) {
         >
           ←
         </button>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold uppercase text-slate-200">
-          {peerName.charAt(0)}
+        <span className="relative shrink-0">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold uppercase text-slate-200">
+            {peerName.charAt(0)}
+          </span>
+          {isPeerOnline ? (
+            <span
+              aria-label="Online"
+              className="absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full border-2 border-slate-900 bg-emerald-500"
+            />
+          ) : null}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-100">
+            {peerName}
+          </p>
+          <p className="text-xs text-slate-500">
+            {isPeerOnline ? "Online" : "Offline"}
+          </p>
         </div>
-        <p className="text-sm font-semibold text-slate-100">{peerName}</p>
       </header>
 
       {hasMore ? (

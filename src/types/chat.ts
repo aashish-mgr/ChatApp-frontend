@@ -46,6 +46,11 @@ export interface LoginResponse extends AckResponse {
   user?: User;
 }
 
+export interface PresenceListResponse extends AckResponse {
+  /** Ids of the users currently online. */
+  onlineUserIds?: string[];
+}
+
 export interface UsersResponse extends AckResponse {
   users?: User[];
 }
@@ -86,6 +91,7 @@ export interface PayloadMap {
   "message:history": [{ roomId: string; cursor?: string; limit?: number }];
   "message:send": [{ roomId: string; content: string }];
   "message:delete": [string];
+  "presence:list": [];
 }
 
 /** Acknowledgement payload returned for each client -> server event. */
@@ -101,6 +107,7 @@ export interface AckMap {
   "message:history": MessagesResponse;
   "message:send": MessageSendResponse;
   "message:delete": AckResponse;
+  "presence:list": PresenceListResponse;
 }
 
 export type ClientToServerEvents = {
@@ -114,5 +121,6 @@ export interface ServerToClientEvents {
   "message:deleted": (payload: { messageId: string }) => void;
   "room:new": (payload: { roomId: string }) => void;
   "room:deleted": (payload: { roomId: string }) => void;
+  "presence:update": (payload: { userId: string; online: boolean }) => void;
   auth_error: (payload: AuthError) => void;
 }

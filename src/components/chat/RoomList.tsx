@@ -10,7 +10,7 @@ function peerOf(room: Room, currentUserId: string | undefined) {
 
 export function RoomList() {
   const { user } = useAuth();
-  const { rooms, roomsStatus, activeRoomId, selectRoom, refreshRooms } =
+  const { rooms, roomsStatus, activeRoomId, isUserOnline, selectRoom, refreshRooms } =
     useChat();
 
   if (roomsStatus === "loading") {
@@ -53,6 +53,7 @@ export function RoomList() {
             }: ${room.lastMessage.content}`
           : "No messages yet";
         const isActive = room.id === activeRoomId;
+        const isOnline = peer ? isUserOnline(peer.id) : false;
 
         return (
           <li key={room.id}>
@@ -63,8 +64,16 @@ export function RoomList() {
                 isActive ? "bg-slate-800" : "hover:bg-slate-800/60"
               }`}
             >
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold uppercase text-slate-200">
-                {name.charAt(0)}
+              <span className="relative shrink-0">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold uppercase text-slate-200">
+                  {name.charAt(0)}
+                </span>
+                {isOnline ? (
+                  <span
+                    aria-label="Online"
+                    className="absolute -right-0.5 -bottom-0.5 h-3 w-3 rounded-full border-2 border-slate-950 bg-emerald-500"
+                  />
+                ) : null}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-slate-100">

@@ -11,7 +11,7 @@ interface NewChatDialogProps {
 }
 
 export function NewChatDialog({ onClose }: NewChatDialogProps) {
-  const { openRoomWithUser } = useChat();
+  const { openRoomWithUser, isUserOnline } = useChat();
   const [query, setQuery] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -117,8 +117,16 @@ export function NewChatDialog({ onClose }: NewChatDialogProps) {
                     disabled={startingId === person.id}
                     className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-slate-800 disabled:opacity-60"
                   >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold uppercase text-slate-200">
-                      {person.username.charAt(0)}
+                    <span className="relative shrink-0">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold uppercase text-slate-200">
+                        {person.username.charAt(0)}
+                      </span>
+                      {isUserOnline(person.id) ? (
+                        <span
+                          aria-label="Online"
+                          className="absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full border-2 border-slate-900 bg-emerald-500"
+                        />
+                      ) : null}
                     </span>
                     <span className="truncate text-sm text-slate-100">
                       {person.username}
