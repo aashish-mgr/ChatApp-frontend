@@ -73,6 +73,15 @@ export function ChatShell({ children }: { children: ReactNode }) {
           isRoomOpen ? "flex" : "hidden md:flex"
         } min-w-0 flex-1 flex-col`}
       >
+        {!isConnected ? (
+          <div
+            role="status"
+            className="border-b border-amber-900/60 bg-amber-950/40 px-4 py-1.5 text-center text-xs text-amber-200"
+          >
+            Reconnecting… messages will send once you&apos;re back online.
+          </div>
+        ) : null}
+
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
       </main>
 
