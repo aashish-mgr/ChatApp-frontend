@@ -2,12 +2,24 @@
 
 import type { ReactNode } from "react";
 import { SocketProvider } from "../components/providers/SocketProvider";
-import { AuthProvider } from "../components/providers/AuthProvider";
+import { AuthProvider, useAuth } from "../components/providers/AuthProvider";
+import { ChatProvider } from "../components/providers/ChatProvider";
+
+/**
+ * Remounts the chat store whenever the signed-in user changes, so one user's
+ * rooms and messages can never leak into another session.
+ */
+function ChatSession({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  return <ChatProvider key={user?.id ?? "anonymous"}>{children}</ChatProvider>;
+}
 
 export default function Providers({ children }: { children: ReactNode }) {
   return (
     <SocketProvider>
-      <AuthProvider>{children}</AuthProvider>
+      <AuthProvider>
+        <ChatSession>{children}</ChatSession>
+      </AuthProvider>
     </SocketProvider>
   );
 }
