@@ -7,6 +7,7 @@ interface MessageListProps {
   messages: Message[];
   currentUserId: string;
   isLoading?: boolean;
+  onRetry: (messageId: string) => void;
   onDelete: (messageId: string) => void;
 }
 
@@ -21,6 +22,7 @@ export function MessageList({
   messages,
   currentUserId,
   isLoading = false,
+  onRetry,
   onDelete,
 }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -63,7 +65,7 @@ export function MessageList({
                 </p>
               ) : null}
 
-              <p className="whitespace-pre-wrap break-words">
+              <p className="break-words whitespace-pre-wrap">
                 {message.content}
               </p>
 
@@ -72,15 +74,30 @@ export function MessageList({
                   isMine ? "text-sky-100/80" : "text-slate-400"
                 }`}
               >
-                {isMine ? (
+                {isMine && message.clientStatus === "failed" ? (
+                  <button
+                    type="button"
+                    onClick={() => onRetry(message.id)}
+                    className="font-medium text-red-100 underline underline-offset-2 hover:text-white"
+                  >
+                    Failed · Retry
+                  </button>
+                ) : null}
+
+                {isMine && message.clientStatus === "sending" ? (
+                  <span>Sending…</span>
+                ) : null}
+
+                {isMine && !message.clientStatus ? (
                   <button
                     type="button"
                     onClick={() => onDelete(message.id)}
-                    className="hidden text-sky-100/80 underline-offset-2 hover:text-white hover:underline group-hover:inline"
+                    className="hidden underline-offset-2 hover:text-white hover:underline group-hover:inline"
                   >
                     Delete
                   </button>
                 ) : null}
+
                 <span>{formatTime(message.createdAt)}</span>
               </div>
             </div>

@@ -47,6 +47,7 @@ interface ChatContextValue {
   openRoomWithUser: (target: User) => Promise<string>;
   loadOlder: (roomId: string) => Promise<void>;
   sendMessage: (roomId: string, content: string) => Promise<void>;
+  retryMessage: (roomId: string, messageId: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
 }
 
@@ -62,6 +63,12 @@ const emptyHistory = (): RoomHistory => ({
 const othersIn = (room: Room, currentUserId: string | undefined): User[] =>
   room.members.filter((member) => member.id !== currentUserId);
 
+let tempCounter = 0;
+const makeTempId = (): string => {
+  tempCounter += 1;
+  return `temp-${Date.now()}-${tempCounter}`;
+};
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const { isConnected } = useSocket();
@@ -76,8 +83,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   // Rooms whose initial history has been requested, so we never fetch twice.
   const requestedRooms = useRef<Set<string>>(new Set());
+  // Latest history, for reads that must not re-run an effect on every message.
+  const historyRef = useRef<Record<string, RoomHistory>>({});
+  // Maps a server message id back to the optimistic message it confirms.
+  const pendingByServerId = useRef<Map<string, string>>(new Map());
 
   const currentUserId = user?.id;
+
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
 
   const refreshRooms = useCallback(async () => {
     try {
@@ -248,22 +263,120 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [user, refreshRooms],
   );
 
-  const sendMessage = useCallback(
-    async (roomId: string, content: string) => {
-      const trimmed = content.trim();
-      if (!roomId || !trimmed) return;
+  /** Sends `content` and reconciles the optimistic message with the server. */
+  const deliver = useCallback(
+    async (roomId: string, tempId: string, content: string) => {
+      const markFailed = () => {
+        setHistory((prev) => {
+          const room = prev[roomId];
+          if (!room) return prev;
+          return {
+            ...prev,
+            [roomId]: {
+              ...room,
+              messages: room.messages.map((item) =>
+                item.id === tempId
+                  ? { ...item, clientStatus: "failed" as const }
+                  : item,
+              ),
+            },
+          };
+        });
+      };
 
-      const socket = await whenConnected(getSocket());
-      const res = await request(socket, "message:send", {
-        roomId,
-        content: trimmed,
-      });
+      try {
+        const socket = await whenConnected(getSocket());
+        const res = await request(socket, "message:send", { roomId, content });
 
-      if (res.status !== 200) {
-        throw new Error(res.message || "Message could not be sent.");
+        if (res.status !== 200 || !res.messageId) {
+          markFailed();
+          return;
+        }
+
+        const serverId = res.messageId;
+        const alreadyArrived =
+          historyRef.current[roomId]?.messages.some(
+            (item) => item.id === serverId,
+          ) ?? false;
+
+        if (alreadyArrived) {
+          // The broadcast beat the ack: drop the optimistic copy.
+          setHistory((prev) => {
+            const room = prev[roomId];
+            if (!room) return prev;
+            return {
+              ...prev,
+              [roomId]: {
+                ...room,
+                messages: room.messages.filter((item) => item.id !== tempId),
+              },
+            };
+          });
+        } else {
+          pendingByServerId.current.set(serverId, tempId);
+        }
+      } catch {
+        markFailed();
       }
     },
     [],
+  );
+
+  const sendMessage = useCallback(
+    async (roomId: string, content: string) => {
+      const trimmed = content.trim();
+      if (!roomId || !trimmed || !user) return;
+
+      const tempId = makeTempId();
+      const optimistic: Message = {
+        id: tempId,
+        content: trimmed,
+        createdAt: new Date().toISOString(),
+        senderId: user.id,
+        roomId,
+        sender: user,
+        clientStatus: "sending",
+      };
+
+      setHistory((prev) => {
+        const room = prev[roomId] ?? emptyHistory();
+        return {
+          ...prev,
+          [roomId]: { ...room, messages: [...room.messages, optimistic] },
+        };
+      });
+
+      await deliver(roomId, tempId, trimmed);
+    },
+    [user, deliver],
+  );
+
+  const retryMessage = useCallback(
+    async (roomId: string, messageId: string) => {
+      const target = historyRef.current[roomId]?.messages.find(
+        (item) => item.id === messageId,
+      );
+      if (!target) return;
+
+      setHistory((prev) => {
+        const room = prev[roomId];
+        if (!room) return prev;
+        return {
+          ...prev,
+          [roomId]: {
+            ...room,
+            messages: room.messages.map((item) =>
+              item.id === messageId
+                ? { ...item, clientStatus: "sending" as const }
+                : item,
+            ),
+          },
+        };
+      });
+
+      await deliver(roomId, messageId, target.content);
+    },
+    [deliver],
   );
 
   const deleteMessage = useCallback(async (messageId: string) => {
@@ -331,14 +444,39 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const socket = getSocket();
 
     const handleNewMessage = (message: Message) => {
+      let tempId = pendingByServerId.current.get(message.id);
+      if (tempId) pendingByServerId.current.delete(message.id);
+
+      if (!tempId) {
+        // The server emits `message:new` before it acks, so the broadcast wins
+        // the race. Match the oldest still-unsent copy with the same text so
+        // the optimistic message is replaced rather than duplicated.
+        const acked = new Set(pendingByServerId.current.values());
+        tempId = (
+          historyRef.current[message.roomId]?.messages ?? []
+        ).find(
+          (item) =>
+            item.clientStatus === "sending" &&
+            !acked.has(item.id) &&
+            item.senderId === message.senderId &&
+            item.content === message.content,
+        )?.id;
+      }
+
       setHistory((prev) => {
         const room = prev[message.roomId];
-        if (!room || room.messages.some((item) => item.id === message.id)) {
-          return prev;
+        if (!room) return prev;
+
+        let messages = room.messages;
+        if (tempId) {
+          messages = messages.filter((item) => item.id !== tempId);
+        }
+        if (messages.some((item) => item.id === message.id)) {
+          return { ...prev, [message.roomId]: { ...room, messages } };
         }
         return {
           ...prev,
-          [message.roomId]: { ...room, messages: [...room.messages, message] },
+          [message.roomId]: { ...room, messages: [...messages, message] },
         };
       });
 
@@ -425,6 +563,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       openRoomWithUser,
       loadOlder,
       sendMessage,
+      retryMessage,
       deleteMessage,
     }),
     [
@@ -437,6 +576,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       openRoomWithUser,
       loadOlder,
       sendMessage,
+      retryMessage,
       deleteMessage,
     ],
   );

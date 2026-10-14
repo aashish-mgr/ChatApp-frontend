@@ -25,6 +25,11 @@ export interface Message {
   senderId: string;
   roomId: string;
   sender: User;
+  /**
+   * Client-only delivery state for optimistic messages. Absent on messages
+   * that came from the server.
+   */
+  clientStatus?: "sending" | "failed";
 }
 
 export interface Room {

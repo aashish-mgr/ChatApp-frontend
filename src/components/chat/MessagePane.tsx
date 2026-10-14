@@ -14,8 +14,14 @@ interface MessagePaneProps {
 export function MessagePane({ room }: MessagePaneProps) {
   const router = useRouter();
   const { user } = useAuth();
-  const { getRoomHistory, loadOlder, sendMessage, deleteMessage, isUserOnline } =
-    useChat();
+  const {
+    getRoomHistory,
+    loadOlder,
+    sendMessage,
+    retryMessage,
+    deleteMessage,
+    isUserOnline,
+  } = useChat();
 
   const { messages, hasMore, isLoading } = getRoomHistory(room.id);
   const peer = room.members.find((member) => member.id !== user?.id);
@@ -71,10 +77,11 @@ export function MessagePane({ room }: MessagePaneProps) {
         messages={messages}
         currentUserId={user?.id ?? ""}
         isLoading={isLoading}
+        onRetry={(messageId) => void retryMessage(room.id, messageId)}
         onDelete={(messageId) => void deleteMessage(messageId)}
       />
 
-      <Composer onSend={(content) => sendMessage(room.id, content)} />
+      <Composer onSend={(content) => void sendMessage(room.id, content)} />
     </div>
   );
 }
