@@ -54,6 +54,10 @@ interface ChatContextValue {
   sendMessage: (roomId: string, content: string) => Promise<void>;
   retryMessage: (roomId: string, messageId: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
+  /** Removes the current user's membership of a room. */
+  leaveRoom: (roomId: string) => Promise<void>;
+  /** Deletes the room (and its messages) for every member. */
+  deleteRoom: (roomId: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -397,6 +401,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [deliver],
   );
 
+  /** Removes a room from the list, its history, and the active-room state. */
+  const dropRoom = useCallback((roomId: string) => {
+    requestedRooms.current.delete(roomId);
+    setRooms((prev) => prev.filter((room) => room.id !== roomId));
+    setHistory((prev) => {
+      if (!(roomId in prev)) return prev;
+      const next = { ...prev };
+      delete next[roomId];
+      return next;
+    });
+    setActiveRoomId((prev) => (prev === roomId ? null : prev));
+  }, []);
+
   const deleteMessage = useCallback(async (messageId: string) => {
     const socket = await whenConnected(getSocket());
     const res = await request(socket, "message:delete", messageId);
@@ -404,6 +421,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       throw new Error(res.message || "Message could not be deleted.");
     }
   }, []);
+
+  const leaveRoom = useCallback(async (roomId: string) => {
+    const socket = await whenConnected(getSocket());
+    const res = await request(socket, "room:leave", roomId);
+    if (res.status !== 200) {
+      throw new Error(res.message || "Could not leave the conversation.");
+    }
+    // Drop it locally right away; other devices reconcile via room:list.
+    dropRoom(roomId);
+  }, [dropRoom]);
+
+  const deleteRoom = useCallback(async (roomId: string) => {
+    const socket = await whenConnected(getSocket());
+    const res = await request(socket, "room:delete", roomId);
+    if (res.status !== 200) {
+      throw new Error(res.message || "Could not delete the conversation.");
+    }
+    // The server broadcasts `room:deleted`, which also cleans up other
+    // devices; clearing locally here keeps this one instant.
+    dropRoom(roomId);
+  }, [dropRoom]);
 
   const getRoomHistory = useCallback(
     (roomId: string): RoomHistoryView => {
@@ -537,15 +575,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
 
     const handleDeletedRoom = ({ roomId }: { roomId: string }) => {
-      requestedRooms.current.delete(roomId);
-      setRooms((prev) => prev.filter((room) => room.id !== roomId));
-      setHistory((prev) => {
-        if (!(roomId in prev)) return prev;
-        const next = { ...prev };
-        delete next[roomId];
-        return next;
-      });
-      setActiveRoomId((prev) => (prev === roomId ? null : prev));
+      dropRoom(roomId);
     };
 
     const handlePresenceUpdate = ({
@@ -577,7 +607,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       socket.off("room:deleted", handleDeletedRoom);
       socket.off("presence:update", handlePresenceUpdate);
     };
-  }, [user, isConnected, refreshRooms]);
+  }, [user, isConnected, refreshRooms, dropRoom]);
 
   const value = useMemo<ChatContextValue>(
     () => ({
@@ -593,6 +623,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       sendMessage,
       retryMessage,
       deleteMessage,
+      leaveRoom,
+      deleteRoom,
     }),
     [
       rooms,
@@ -607,6 +639,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       sendMessage,
       retryMessage,
       deleteMessage,
+      leaveRoom,
+      deleteRoom,
     ],
   );
 

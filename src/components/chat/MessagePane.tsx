@@ -24,10 +24,16 @@ export function MessagePane({ room }: MessagePaneProps) {
     sendMessage,
     retryMessage,
     deleteMessage,
+    leaveRoom,
+    deleteRoom,
     isUserOnline,
   } = useChat();
   const { toast } = useToast();
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [pendingRoomAction, setPendingRoomAction] = useState<
+    "leave" | "delete" | null
+  >(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const { messages, hasMore, isLoading, error } = getRoomHistory(room.id);
   const peer = room.members.find((member) => member.id !== user?.id);
@@ -43,6 +49,28 @@ export function MessagePane({ room }: MessagePaneProps) {
     } catch (error) {
       toast(
         error instanceof Error ? error.message : "Could not delete the message.",
+        "error",
+      );
+    }
+  };
+
+  const confirmRoomAction = async () => {
+    const action = pendingRoomAction;
+    setPendingRoomAction(null);
+    setMenuOpen(false);
+    if (!action) return;
+    try {
+      if (action === "leave") {
+        await leaveRoom(room.id);
+        toast("You left the conversation.", "success");
+      } else {
+        await deleteRoom(room.id);
+        toast("Conversation deleted.", "success");
+      }
+      router.push("/");
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : "Something went wrong.",
         "error",
       );
     }
@@ -70,13 +98,59 @@ export function MessagePane({ room }: MessagePaneProps) {
             />
           ) : null}
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-slate-100">
             {peerName}
           </p>
           <p className="text-xs text-slate-500">
             {isPeerOnline ? "Online" : "Offline"}
           </p>
+        </div>
+
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            aria-label="Conversation options"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-lg text-slate-400 transition hover:bg-slate-800 hover:text-white"
+          >
+            ⋯
+          </button>
+          {menuOpen ? (
+            <>
+              {/* Click-away to dismiss. */}
+              <button
+                type="button"
+                aria-hidden="true"
+                tabIndex={-1}
+                onClick={() => setMenuOpen(false)}
+                className="fixed inset-0 z-10 cursor-default"
+              />
+              <div
+                role="menu"
+                className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-slate-800 bg-slate-900 py-1 shadow-xl"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => setPendingRoomAction("leave")}
+                  className="block w-full px-4 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-800"
+                >
+                  Leave conversation
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => setPendingRoomAction("delete")}
+                  className="block w-full px-4 py-2 text-left text-sm text-red-400 transition hover:bg-slate-800"
+                >
+                  Delete conversation
+                </button>
+              </div>
+            </>
+          ) : null}
         </div>
       </header>
 
@@ -124,6 +198,20 @@ export function MessagePane({ room }: MessagePaneProps) {
         destructive
         onConfirm={() => void confirmDelete()}
         onCancel={() => setPendingDelete(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingRoomAction !== null}
+        title={pendingRoomAction === "leave" ? "Leave conversation" : "Delete conversation"}
+        message={
+          pendingRoomAction === "leave"
+            ? "You'll stop receiving messages here. You can reopen the conversation later."
+            : "The conversation and all of its messages will be deleted for everyone. This can't be undone."
+        }
+        confirmLabel={pendingRoomAction === "leave" ? "Leave" : "Delete"}
+        destructive
+        onConfirm={() => void confirmRoomAction()}
+        onCancel={() => setPendingRoomAction(null)}
       />
     </div>
   );
