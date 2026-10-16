@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ChatApp — Frontend
 
-## Getting Started
+Next.js (App Router) + TypeScript + Tailwind client for the ChatApp backend.
+All realtime traffic goes over **Socket.IO** — there is no REST layer.
 
-First, run the development server:
+## Requirements
+
+- Node.js 20+
+- The `chat_backend` server running (defaults to `http://localhost:3000`)
+
+## Getting started
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The dev server runs on **http://localhost:3001** (see `package.json`). Open that
+URL; you'll be redirected to `/login`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create `.env.local` (see `.env.example`):
 
-## Learn More
+```bash
+NEXT_PUBLIC_SOCKET_URL=http://localhost:3000
+```
 
-To learn more about Next.js, take a look at the following resources:
+This must point at the Socket.IO backend. If unset, the client falls back to
+`http://localhost:3000` (dev default only — always set it in production).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `npm run dev` — start the dev server on port 3001
+- `npm run build` — production build
+- `npm run start` — serve the production build
+- `npm run lint` — run ESLint
 
-## Deploy on Vercel
+## Structure
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `src/app` — routes: `/login` (sign in + sign up tabs) and `(chat)` (`/`, `/chat/[roomId]`)
+- `src/components/providers` — Socket, Auth, Chat and Toast contexts
+- `src/components/chat` — sidebar, room list, message pane/list, composer, dialogs
+- `src/lib` — socket singleton, session store, ack-based `request()` helper
+- `src/types/chat.ts` — shared types and the socket event contracts
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Notes
+
+- Auth is over Socket.IO (`login`/`register`), and the JWT is kept in
+  `localStorage`; an expired token triggers `auth_error`, which logs the user out.
+- Messages are sent optimistically and reconciled with the server's
+  `message:new` broadcast / ack.

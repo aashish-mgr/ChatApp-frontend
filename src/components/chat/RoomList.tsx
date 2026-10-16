@@ -6,14 +6,10 @@ import type { Room } from "../../types/chat";
 import { useAuth } from "../providers/AuthProvider";
 import { useChat } from "../providers/ChatProvider";
 import { RoomListSkeleton } from "./Skeletons";
+import { activeRoomIdFromPath } from "../../lib/navigation";
 
 function peerOf(room: Room, currentUserId: string | undefined) {
   return room.members.find((member) => member.id !== currentUserId);
-}
-
-function activeRoomIdFromPath(pathname: string | null): string | null {
-  if (!pathname || !pathname.startsWith("/chat/")) return null;
-  return pathname.slice("/chat/".length).split("/")[0] || null;
 }
 
 export function RoomList() {

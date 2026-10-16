@@ -6,11 +6,7 @@ import { useAuth } from "../providers/AuthProvider";
 import { useSocket } from "../providers/SocketProvider";
 import { RoomList } from "./RoomList";
 import { NewChatDialog } from "./NewChatDialog";
-
-function activeRoomIdFromPath(pathname: string | null): string | null {
-  if (!pathname || !pathname.startsWith("/chat/")) return null;
-  return pathname.slice("/chat/".length).split("/")[0] || null;
-}
+import { activeRoomIdFromPath } from "../../lib/navigation";
 
 export function ChatShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
