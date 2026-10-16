@@ -73,6 +73,14 @@ const emptyHistory = (): RoomHistory => ({
 const othersIn = (room: Room, currentUserId: string | undefined): User[] =>
   room.members.filter((member) => member.id !== currentUserId);
 
+/** Zeroes a room's badge without touching the server. */
+const clearUnread = (rooms: Room[], roomId: string): Room[] =>
+  rooms.some((room) => room.id === roomId && room.unreadCount > 0)
+    ? rooms.map((room) =>
+        room.id === roomId ? { ...room, unreadCount: 0 } : room,
+      )
+    : rooms;
+
 let tempCounter = 0;
 const makeTempId = (): string => {
   tempCounter += 1;
@@ -97,12 +105,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const historyRef = useRef<Record<string, RoomHistory>>({});
   // Maps a server message id back to the optimistic message it confirms.
   const pendingByServerId = useRef<Map<string, string>>(new Map());
+  // The open room, readable from socket handlers without re-subscribing them.
+  const activeRoomIdRef = useRef<string | null>(null);
 
   const currentUserId = user?.id;
 
   useEffect(() => {
     historyRef.current = history;
   }, [history]);
+
+  useEffect(() => {
+    activeRoomIdRef.current = activeRoomId;
+  }, [activeRoomId]);
 
   const refreshRooms = useCallback(async () => {
     try {
@@ -189,12 +203,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /** Clears a room's badge locally and on the server (and other devices). */
+  const markRoomRead = useCallback(async (roomId: string) => {
+    setRooms((prev) => clearUnread(prev, roomId));
+    try {
+      const socket = await whenConnected(getSocket());
+      await request(socket, "room:read", roomId);
+    } catch {
+      // Best-effort: room:list reconciles the real counts.
+    }
+  }, []);
+
   const activateRoom = useCallback(
     (roomId: string) => {
       setActiveRoomId(roomId);
       void loadMessages(roomId);
+      void markRoomRead(roomId);
     },
-    [loadMessages],
+    [loadMessages, markRoomRead],
   );
 
   const loadOlder = useCallback(
@@ -273,6 +299,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                   createdAt: new Date().toISOString(),
                   members: [user, target],
                   lastMessage: null,
+                  unreadCount: 0,
                 },
                 ...prev,
               ],
@@ -548,10 +575,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         };
       });
 
+      const isFromOther = message.senderId !== user.id;
+      const isActive = activeRoomIdRef.current === message.roomId;
+      if (isFromOther && isActive) {
+        // The room is open: mark it read so the badge never re-appears.
+        void markRoomRead(message.roomId);
+      }
+
       setRooms((prev) => {
         const index = prev.findIndex((room) => room.id === message.roomId);
         if (index === -1) return prev;
-        const updated = { ...prev[index], lastMessage: message };
+        const updated: Room = {
+          ...prev[index],
+          lastMessage: message,
+          unreadCount:
+            isFromOther && !isActive
+              ? prev[index].unreadCount + 1
+              : prev[index].unreadCount,
+        };
         return [updated, ...prev.filter((room) => room.id !== message.roomId)];
       });
     };
@@ -581,6 +622,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       dropRoom(roomId);
     };
 
+    // One of our devices read a room: clear the badge here too.
+    const handleRoomRead = ({ roomId }: { roomId: string }) => {
+      setRooms((prev) => clearUnread(prev, roomId));
+    };
+
     const handlePresenceUpdate = ({
       userId,
       online,
@@ -601,6 +647,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     socket.on("message:deleted", handleDeletedMessage);
     socket.on("room:new", handleNewRoom);
     socket.on("room:deleted", handleDeletedRoom);
+    socket.on("room:read", handleRoomRead);
     socket.on("presence:update", handlePresenceUpdate);
 
     return () => {
@@ -608,9 +655,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       socket.off("message:deleted", handleDeletedMessage);
       socket.off("room:new", handleNewRoom);
       socket.off("room:deleted", handleDeletedRoom);
+      socket.off("room:read", handleRoomRead);
       socket.off("presence:update", handlePresenceUpdate);
     };
-  }, [user, isConnected, refreshRooms, dropRoom]);
+  }, [user, isConnected, refreshRooms, dropRoom, markRoomRead]);
 
   const value = useMemo<ChatContextValue>(
     () => ({

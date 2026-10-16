@@ -37,6 +37,8 @@ export interface Room {
   createdAt: string;
   members: User[];
   lastMessage: Message | null;
+  /** Messages from others the current user hasn't read yet. */
+  unreadCount: number;
 }
 
 /** Base shape every acknowledgement shares. */
@@ -91,6 +93,7 @@ export interface PayloadMap {
   "user:search": [{ query: string }];
   "room:open": [string];
   "room:list": [];
+  "room:read": [string];
   "room:leave": [string];
   "room:delete": [string];
   "message:history": [{ roomId: string; cursor?: string; limit?: number }];
@@ -109,6 +112,7 @@ export interface AckMap {
   "room:list": RoomsResponse;
   "room:leave": AckResponse;
   "room:delete": AckResponse;
+  "room:read": AckResponse;
   "message:history": MessagesResponse;
   "message:send": MessageSendResponse;
   "message:delete": AckResponse;
@@ -126,6 +130,8 @@ export interface ServerToClientEvents {
   "message:deleted": (payload: { messageId: string }) => void;
   "room:new": (payload: { roomId: string }) => void;
   "room:deleted": (payload: { roomId: string }) => void;
+  /** Sent to every device of a user when one of them reads a room. */
+  "room:read": (payload: { roomId: string }) => void;
   "presence:update": (payload: { userId: string; online: boolean }) => void;
   auth_error: (payload: AuthError) => void;
 }

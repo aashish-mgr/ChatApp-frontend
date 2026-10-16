@@ -87,6 +87,14 @@ export function RoomList() {
                   {preview}
                 </span>
               </span>
+              {room.unreadCount > 0 ? (
+                <span
+                  aria-label={`${room.unreadCount} unread messages`}
+                  className="shrink-0 rounded-full bg-sky-500 px-2 py-0.5 text-xs font-semibold text-white"
+                >
+                  {room.unreadCount > 99 ? "99+" : room.unreadCount}
+                </span>
+              ) : null}
             </Link>
           </li>
         );
