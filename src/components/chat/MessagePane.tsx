@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Room } from "../../types/chat";
 import { useAuth } from "../providers/AuthProvider";
 import { useChat } from "../providers/ChatProvider";
+import { useSocket } from "../providers/SocketProvider";
 import { useToast } from "../providers/ToastProvider";
 import { MessageList } from "./MessageList";
 import { Composer } from "./Composer";
@@ -17,6 +18,7 @@ interface MessagePaneProps {
 export function MessagePane({ room }: MessagePaneProps) {
   const router = useRouter();
   const { user } = useAuth();
+  const { isConnected } = useSocket();
   const {
     getRoomHistory,
     retryHistory,
@@ -103,7 +105,11 @@ export function MessagePane({ room }: MessagePaneProps) {
             {peerName}
           </p>
           <p className="text-xs text-slate-500">
-            {isPeerOnline ? "Online" : "Offline"}
+            {!isConnected
+              ? "Status unavailable"
+              : isPeerOnline
+                ? "Online"
+                : "Offline"}
           </p>
         </div>
 

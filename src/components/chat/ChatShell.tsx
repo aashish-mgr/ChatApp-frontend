@@ -78,7 +78,8 @@ export function ChatShell({ children }: { children: ReactNode }) {
             role="status"
             className="border-b border-amber-900/60 bg-amber-950/40 px-4 py-1.5 text-center text-xs text-amber-200"
           >
-            Reconnecting… messages will send once you&apos;re back online.
+            Reconnecting… messages sent now may fail — use Retry once
+            you&apos;re back online.
           </div>
         ) : null}
 

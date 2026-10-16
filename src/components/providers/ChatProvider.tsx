@@ -464,9 +464,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [loadMessages],
   );
 
+  // Last-known presence. Deliberately NOT gated on our own connection: while
+  // we are offline the previous state is more accurate than blanking every
+  // dot to "Offline" (which wrongly implied peers went offline with us).
   const isUserOnline = useCallback(
-    (userId: string) => isConnected && onlineUserIds.has(userId),
-    [isConnected, onlineUserIds],
+    (userId: string) => onlineUserIds.has(userId),
+    [onlineUserIds],
   );
 
   // Load the room list and online-user state whenever a session becomes
