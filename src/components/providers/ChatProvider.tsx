@@ -24,6 +24,8 @@ interface RoomHistory {
   nextCursor: string | null;
   hasMore: boolean;
   isLoading: boolean;
+  /** Set when the initial load failed, so the UI can offer a retry. */
+  error: string | null;
 }
 
 /** What a consumer needs to render one room's history. */
@@ -31,6 +33,7 @@ export interface RoomHistoryView {
   messages: Message[];
   hasMore: boolean;
   isLoading: boolean;
+  error: string | null;
 }
 
 type RoomsStatus = "loading" | "ready" | "error";
@@ -43,6 +46,8 @@ interface ChatContextValue {
   /** Marks a room as the live one: joins its channel and loads its history. */
   activateRoom: (roomId: string) => void;
   getRoomHistory: (roomId: string) => RoomHistoryView;
+  /** Re-runs a failed initial history load. */
+  retryHistory: (roomId: string) => Promise<void>;
   /** Opens (or creates) the 1:1 room with a user and returns its id. */
   openRoomWithUser: (target: User) => Promise<string>;
   loadOlder: (roomId: string) => Promise<void>;
@@ -58,6 +63,7 @@ const emptyHistory = (): RoomHistory => ({
   nextCursor: null,
   hasMore: false,
   isLoading: false,
+  error: null,
 });
 
 const othersIn = (room: Room, currentUserId: string | undefined): User[] =>
@@ -127,9 +133,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (requestedRooms.current.has(roomId)) return;
     requestedRooms.current.add(roomId);
 
+    // The request itself succeeded but the server refused (403/404/...):
+    // surface its message. Timeouts and network failures get a friendlier one.
+    const failWith = (message: string) => {
+      requestedRooms.current.delete(roomId);
+      setHistory((prev) => ({
+        ...prev,
+        [roomId]: {
+          ...(prev[roomId] ?? emptyHistory()),
+          isLoading: false,
+          error: message,
+        },
+      }));
+    };
+
     setHistory((prev) => ({
       ...prev,
-      [roomId]: { ...(prev[roomId] ?? emptyHistory()), isLoading: true },
+      [roomId]: {
+        ...(prev[roomId] ?? emptyHistory()),
+        isLoading: true,
+        error: null,
+      },
     }));
 
     try {
@@ -140,11 +164,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       });
 
       if (res.status !== 200 || !res.messages) {
-        requestedRooms.current.delete(roomId);
-        setHistory((prev) => ({
-          ...prev,
-          [roomId]: { ...(prev[roomId] ?? emptyHistory()), isLoading: false },
-        }));
+        failWith(res.message || "Could not load messages.");
         return;
       }
 
@@ -157,14 +177,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           nextCursor: res.nextCursor ?? null,
           hasMore: Boolean(res.hasMore),
           isLoading: false,
+          error: null,
         },
       }));
     } catch {
-      requestedRooms.current.delete(roomId);
-      setHistory((prev) => ({
-        ...prev,
-        [roomId]: { ...(prev[roomId] ?? emptyHistory()), isLoading: false },
-      }));
+      failWith("Could not load messages. Check your connection and retry.");
     }
   }, []);
 
@@ -219,6 +236,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             nextCursor: res.nextCursor ?? null,
             hasMore: Boolean(res.hasMore),
             isLoading: false,
+            error: null,
           },
         }));
       } catch {
@@ -394,9 +412,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         messages: room?.messages ?? [],
         hasMore: room?.hasMore ?? false,
         isLoading: room?.isLoading ?? false,
+        error: room?.error ?? null,
       };
     },
     [history],
+  );
+
+  const retryHistory = useCallback(
+    async (roomId: string) => {
+      requestedRooms.current.delete(roomId);
+      await loadMessages(roomId);
+    },
+    [loadMessages],
   );
 
   const isUserOnline = useCallback(
@@ -560,6 +587,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       refreshRooms,
       activateRoom,
       getRoomHistory,
+      retryHistory,
       openRoomWithUser,
       loadOlder,
       sendMessage,
@@ -573,6 +601,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       refreshRooms,
       activateRoom,
       getRoomHistory,
+      retryHistory,
       openRoomWithUser,
       loadOlder,
       sendMessage,

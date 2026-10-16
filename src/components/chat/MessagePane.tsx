@@ -19,6 +19,7 @@ export function MessagePane({ room }: MessagePaneProps) {
   const { user } = useAuth();
   const {
     getRoomHistory,
+    retryHistory,
     loadOlder,
     sendMessage,
     retryMessage,
@@ -28,7 +29,7 @@ export function MessagePane({ room }: MessagePaneProps) {
   const { toast } = useToast();
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
-  const { messages, hasMore, isLoading } = getRoomHistory(room.id);
+  const { messages, hasMore, isLoading, error } = getRoomHistory(room.id);
   const peer = room.members.find((member) => member.id !== user?.id);
   const peerName = peer?.username ?? "Conversation";
   const isPeerOnline = peer ? isUserOnline(peer.id) : false;
@@ -92,13 +93,26 @@ export function MessagePane({ room }: MessagePaneProps) {
         </div>
       ) : null}
 
-      <MessageList
-        messages={messages}
-        currentUserId={user?.id ?? ""}
-        isLoading={isLoading}
-        onRetry={(messageId) => void retryMessage(room.id, messageId)}
-        onDelete={(messageId) => setPendingDelete(messageId)}
-      />
+      {error && messages.length === 0 && !isLoading ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+          <p className="text-sm text-red-400">{error}</p>
+          <button
+            type="button"
+            onClick={() => void retryHistory(room.id)}
+            className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-700"
+          >
+            Try again
+          </button>
+        </div>
+      ) : (
+        <MessageList
+          messages={messages}
+          currentUserId={user?.id ?? ""}
+          isLoading={isLoading}
+          onRetry={(messageId) => void retryMessage(room.id, messageId)}
+          onDelete={(messageId) => setPendingDelete(messageId)}
+        />
+      )}
 
       <Composer onSend={(content) => void sendMessage(room.id, content)} />
 
