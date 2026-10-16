@@ -4,8 +4,15 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../components/providers/AuthProvider";
 import { useSocket } from "../../components/providers/SocketProvider";
+import { SocketTimeoutError } from "../../lib/emit";
 
 type Mode = "login" | "register";
+
+// Mirror the backend's register rules so the user learns about them before
+// the round-trip (login intentionally skips them: see auth.socket.ts).
+const MIN_USERNAME_LENGTH = 3;
+const MAX_USERNAME_LENGTH = 32;
+const MIN_PASSWORD_LENGTH = 6;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -35,6 +42,22 @@ export default function LoginPage() {
       return;
     }
 
+    if (mode === "register") {
+      if (
+        trimmedUsername.length < MIN_USERNAME_LENGTH ||
+        trimmedUsername.length > MAX_USERNAME_LENGTH
+      ) {
+        setError(
+          `Username must be ${MIN_USERNAME_LENGTH}-${MAX_USERNAME_LENGTH} characters.`,
+        );
+        return;
+      }
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       if (mode === "register") {
@@ -45,9 +68,11 @@ export default function LoginPage() {
       router.replace("/");
     } catch (submitError) {
       setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "Something went wrong. Please try again.",
+        submitError instanceof SocketTimeoutError
+          ? "Could not reach the server. Please try again."
+          : submitError instanceof Error
+            ? submitError.message
+            : "Something went wrong. Please try again.",
       );
     } finally {
       setIsSubmitting(false);
@@ -55,8 +80,12 @@ export default function LoginPage() {
   };
 
   const switchMode = (next: Mode) => {
+    if (next === mode) return;
     setMode(next);
     setError(null);
+    // Don't carry a typed password across tabs (e.g. a sign-in password
+    // sitting in the sign-up form).
+    setPassword("");
   };
 
   return (
@@ -127,6 +156,12 @@ export default function LoginPage() {
               className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30"
               placeholder="••••••••"
             />
+            {mode === "register" ? (
+              <p className="text-xs text-slate-500">
+                {MIN_PASSWORD_LENGTH}+ characters.{" "}
+                {MIN_USERNAME_LENGTH}-{MAX_USERNAME_LENGTH} character username.
+              </p>
+            ) : null}
           </div>
 
           {error ? (
