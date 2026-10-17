@@ -8,6 +8,13 @@ import { RoomList } from "./RoomList";
 import { NewChatDialog } from "./NewChatDialog";
 import { activeRoomIdFromPath } from "../../lib/navigation";
 
+/** "Mar 2026" style label for the account's creation date, or null if invalid. */
+function formatJoined(iso: string): string | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString([], { month: "short", year: "numeric" });
+}
+
 export function ChatShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const { isConnected } = useSocket();
@@ -15,6 +22,7 @@ export function ChatShell({ children }: { children: ReactNode }) {
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
 
   const isRoomOpen = activeRoomIdFromPath(pathname) !== null;
+  const joinedLabel = user?.createdAt ? formatJoined(user.createdAt) : null;
 
   return (
     <div className="flex h-screen w-full overflow-hidden">
@@ -35,7 +43,13 @@ export function ChatShell({ children }: { children: ReactNode }) {
                   isConnected ? "bg-emerald-500" : "bg-slate-600"
                 }`}
               />
-              {isConnected ? "Online" : "Connecting…"}
+              <span>{isConnected ? "Online" : "Connecting…"}</span>
+              {joinedLabel ? (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>Joined {joinedLabel}</span>
+                </>
+              ) : null}
             </p>
           </div>
           <button

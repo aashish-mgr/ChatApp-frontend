@@ -11,6 +11,8 @@
 export interface User {
   id: string;
   username: string;
+  /** ISO timestamp of account creation, when the server provides it. */
+  createdAt?: string;
 }
 
 export interface Credentials {
