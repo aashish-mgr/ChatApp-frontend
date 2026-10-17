@@ -53,6 +53,8 @@ interface ChatContextValue {
   loadOlder: (roomId: string) => Promise<void>;
   sendMessage: (roomId: string, content: string) => Promise<void>;
   retryMessage: (roomId: string, messageId: string) => Promise<void>;
+  /** Edits one of the current user's messages; the room is notified. */
+  editMessage: (messageId: string, content: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   /** Removes the current user's membership of a room. */
   leaveRoom: (roomId: string) => Promise<void>;
@@ -428,6 +430,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [deliver],
   );
 
+  const editMessage = useCallback(async (messageId: string, content: string) => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+
+    const socket = await whenConnected(getSocket());
+    const res = await request(socket, "message:update", {
+      messageId,
+      content: trimmed,
+    });
+    if (res.status !== 200) {
+      throw new Error(res.message || "Message could not be edited.");
+    }
+  }, []);
+
   /** Removes a room from the list, its history, and the active-room state. */
   const dropRoom = useCallback((roomId: string) => {
     requestedRooms.current.delete(roomId);
@@ -597,6 +613,32 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       });
     };
 
+    const handleUpdatedMessage = (message: Message) => {
+      setHistory((prev) => {
+        const room = prev[message.roomId];
+        if (!room) return prev;
+        if (!room.messages.some((item) => item.id === message.id)) return prev;
+        return {
+          ...prev,
+          [message.roomId]: {
+            ...room,
+            messages: room.messages.map((item) =>
+              item.id === message.id ? message : item,
+            ),
+          },
+        };
+      });
+
+      // Keep the sidebar preview in sync when the edited message is the latest.
+      setRooms((prev) =>
+        prev.map((room) =>
+          room.id === message.roomId && room.lastMessage?.id === message.id
+            ? { ...room, lastMessage: message }
+            : room,
+        ),
+      );
+    };
+
     const handleDeletedMessage = ({ messageId }: { messageId: string }) => {
       setHistory((prev) => {
         let changed = false;
@@ -644,6 +686,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
 
     socket.on("message:new", handleNewMessage);
+    socket.on("message:updated", handleUpdatedMessage);
     socket.on("message:deleted", handleDeletedMessage);
     socket.on("room:new", handleNewRoom);
     socket.on("room:deleted", handleDeletedRoom);
@@ -652,6 +695,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     return () => {
       socket.off("message:new", handleNewMessage);
+      socket.off("message:updated", handleUpdatedMessage);
       socket.off("message:deleted", handleDeletedMessage);
       socket.off("room:new", handleNewRoom);
       socket.off("room:deleted", handleDeletedRoom);
@@ -673,6 +717,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       loadOlder,
       sendMessage,
       retryMessage,
+      editMessage,
       deleteMessage,
       leaveRoom,
       deleteRoom,
@@ -689,6 +734,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       loadOlder,
       sendMessage,
       retryMessage,
+      editMessage,
       deleteMessage,
       leaveRoom,
       deleteRoom,

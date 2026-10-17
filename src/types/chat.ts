@@ -22,6 +22,8 @@ export interface Message {
   id: string;
   content: string;
   createdAt: string;
+  /** Set when the sender edited the message; null/absent when never edited. */
+  editedAt?: string | null;
   senderId: string;
   roomId: string;
   sender: User;
@@ -98,6 +100,7 @@ export interface PayloadMap {
   "room:delete": [string];
   "message:history": [{ roomId: string; cursor?: string; limit?: number }];
   "message:send": [{ roomId: string; content: string }];
+  "message:update": [{ messageId: string; content: string }];
   "message:delete": [string];
   "presence:list": [];
 }
@@ -115,6 +118,7 @@ export interface AckMap {
   "room:read": AckResponse;
   "message:history": MessagesResponse;
   "message:send": MessageSendResponse;
+  "message:update": AckResponse;
   "message:delete": AckResponse;
   "presence:list": PresenceListResponse;
 }
@@ -127,6 +131,7 @@ export type ClientToServerEvents = {
 
 export interface ServerToClientEvents {
   "message:new": (message: Message) => void;
+  "message:updated": (message: Message) => void;
   "message:deleted": (payload: { messageId: string }) => void;
   "room:new": (payload: { roomId: string }) => void;
   "room:deleted": (payload: { roomId: string }) => void;

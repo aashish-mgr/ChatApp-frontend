@@ -1,13 +1,20 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import type { Message } from "../../types/chat";
+import { MAX_MESSAGE_LENGTH } from "./Composer";
 
 interface MessageListProps {
   messages: Message[];
   currentUserId: string;
   isLoading?: boolean;
   onRetry: (messageId: string) => void;
+  onEdit: (messageId: string, content: string) => Promise<void>;
   onDelete: (messageId: string) => void;
 }
 
@@ -43,6 +50,7 @@ export function MessageList({
   currentUserId,
   isLoading = false,
   onRetry,
+  onEdit,
   onDelete,
 }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -51,6 +59,9 @@ export function MessageList({
   const prevLastId = useRef<string | undefined>(undefined);
   const atBottomRef = useRef(true);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Preserve the viewport when older messages are prepended, and stick to the
   // bottom when a new latest message arrives while already at the bottom.
@@ -91,6 +102,55 @@ export function MessageList({
     setIsAtBottom(true);
   };
 
+  const beginEdit = (message: Message) => {
+    setEditingId(message.id);
+    setDraft(message.content);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setDraft("");
+  };
+
+  const saveEdit = async () => {
+    if (editingId === null) return;
+
+    const trimmed = draft.trim().slice(0, MAX_MESSAGE_LENGTH);
+    const original = messages.find((item) => item.id === editingId);
+    // Nothing to save: closing is friendlier than a pointless round-trip.
+    if (!trimmed || !original || trimmed === original.content) {
+      cancelEdit();
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      await onEdit(editingId, trimmed);
+      cancelEdit();
+    } catch {
+      // The parent surfaced the error; keep the editor open to retry.
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleEditKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelEdit();
+      return;
+    }
+    // Enter saves; Shift+Enter keeps a newline. `isComposing` protects IMEs.
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.nativeEvent.isComposing
+    ) {
+      event.preventDefault();
+      void saveEdit();
+    }
+  };
+
   if (messages.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-slate-500">
@@ -119,6 +179,7 @@ export function MessageList({
         {messages.map((message, index) => {
           const previous = index > 0 ? messages[index - 1] : undefined;
           const isMine = message.sender.id === currentUserId;
+          const isEditing = editingId === message.id;
           const dayChanged =
             !previous || formatDay(previous.createdAt) !== formatDay(message.createdAt);
           const startedNewGroup =
@@ -146,55 +207,98 @@ export function MessageList({
                   isMine ? "justify-end" : "justify-start"
                 } ${startedNewGroup ? "" : "mt-1"}`}
               >
-                <div
-                  className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm ${
-                    isMine
-                      ? "bg-sky-500 text-white"
-                      : "bg-slate-800 text-slate-100"
-                  }`}
-                >
-                  {!isMine && startedNewGroup ? (
-                    <p className="mb-0.5 text-xs font-medium text-slate-300">
-                      {message.sender.username}
-                    </p>
-                  ) : null}
-
-                  <p className="break-words whitespace-pre-wrap">
-                    {message.content}
-                  </p>
-
+                {isEditing ? (
+                  <div className="w-full max-w-[75%] rounded-2xl border border-sky-600/60 bg-slate-900 px-3.5 py-2 text-sm">
+                    <textarea
+                      autoFocus
+                      rows={2}
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      onKeyDown={handleEditKeyDown}
+                      aria-label="Edit message"
+                      className="max-h-32 w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none transition focus:border-sky-500"
+                    />
+                    <div className="mt-2 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        disabled={isSavingEdit}
+                        className="rounded-lg px-2.5 py-1 text-xs font-medium text-slate-400 transition hover:text-white disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void saveEdit()}
+                        disabled={isSavingEdit || !draft.trim()}
+                        className="rounded-lg bg-sky-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isSavingEdit ? "Saving…" : "Save"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                   <div
-                    className={`mt-1 flex items-center justify-end gap-2 text-[10px] ${
-                      isMine ? "text-sky-100/80" : "text-slate-400"
+                    className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm ${
+                      isMine
+                        ? "bg-sky-500 text-white"
+                        : "bg-slate-800 text-slate-100"
                     }`}
                   >
-                    {isMine && message.clientStatus === "failed" ? (
-                      <button
-                        type="button"
-                        onClick={() => onRetry(message.id)}
-                        className="font-medium text-red-100 underline underline-offset-2 hover:text-white"
-                      >
-                        Failed · Retry
-                      </button>
+                    {!isMine && startedNewGroup ? (
+                      <p className="mb-0.5 text-xs font-medium text-slate-300">
+                        {message.sender.username}
+                      </p>
                     ) : null}
 
-                    {isMine && message.clientStatus === "sending" ? (
-                      <span>Sending…</span>
-                    ) : null}
+                    <p className="break-words whitespace-pre-wrap">
+                      {message.content}
+                    </p>
 
-                    {isMine && !message.clientStatus ? (
-                      <button
-                        type="button"
-                        onClick={() => onDelete(message.id)}
-                        className="opacity-70 underline-offset-2 transition hover:text-white hover:underline sm:opacity-0 sm:group-hover:opacity-100"
-                      >
-                        Delete
-                      </button>
-                    ) : null}
+                    <div
+                      className={`mt-1 flex items-center justify-end gap-2 text-[10px] ${
+                        isMine ? "text-sky-100/80" : "text-slate-400"
+                      }`}
+                    >
+                      {message.editedAt ? <span>edited</span> : null}
 
-                    <span>{formatTime(message.createdAt)}</span>
+                      {isMine && message.clientStatus === "failed" ? (
+                        <button
+                          type="button"
+                          onClick={() => onRetry(message.id)}
+                          className="font-medium text-red-100 underline underline-offset-2 hover:text-white"
+                        >
+                          Failed · Retry
+                        </button>
+                      ) : null}
+
+                      {isMine && message.clientStatus === "sending" ? (
+                        <span>Sending…</span>
+                      ) : null}
+
+                      {isMine && !message.clientStatus ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => beginEdit(message)}
+                            className="opacity-70 underline-offset-2 transition hover:text-white hover:underline sm:opacity-0 sm:group-hover:opacity-100"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDelete(message.id)}
+                            className="opacity-70 underline-offset-2 transition hover:text-white hover:underline sm:opacity-0 sm:group-hover:opacity-100"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      ) : null}
+
+                      <span>{formatTime(message.createdAt)}</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           );

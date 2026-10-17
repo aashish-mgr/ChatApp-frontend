@@ -25,6 +25,7 @@ export function MessagePane({ room }: MessagePaneProps) {
     loadOlder,
     sendMessage,
     retryMessage,
+    editMessage,
     deleteMessage,
     leaveRoom,
     deleteRoom,
@@ -41,6 +42,19 @@ export function MessagePane({ room }: MessagePaneProps) {
   const peer = room.members.find((member) => member.id !== user?.id);
   const peerName = peer?.username ?? "Conversation";
   const isPeerOnline = peer ? isUserOnline(peer.id) : false;
+
+  const handleEditMessage = async (messageId: string, content: string) => {
+    try {
+      await editMessage(messageId, content);
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : "Could not edit the message.",
+        "error",
+      );
+      // Re-throw so the editor stays open for another attempt.
+      throw error;
+    }
+  };
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
@@ -190,6 +204,7 @@ export function MessagePane({ room }: MessagePaneProps) {
           currentUserId={user?.id ?? ""}
           isLoading={isLoading}
           onRetry={(messageId) => void retryMessage(room.id, messageId)}
+          onEdit={handleEditMessage}
           onDelete={(messageId) => setPendingDelete(messageId)}
         />
       )}
