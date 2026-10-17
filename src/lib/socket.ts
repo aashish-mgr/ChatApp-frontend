@@ -3,8 +3,22 @@ import type { ClientToServerEvents, ServerToClientEvents } from "../types/chat";
 
 export type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-const SOCKET_URL =
-  process.env.NEXT_PUBLIC_SOCKET_URL ?? "http://localhost:3000";
+/**
+ * Local dev default. Any deployed environment must set
+ * `NEXT_PUBLIC_SOCKET_URL`, otherwise the client would silently try to reach
+ * the developer's own machine.
+ */
+const DEFAULT_SOCKET_URL = "http://localhost:3000";
+
+const configuredUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
+
+if (!configuredUrl && process.env.NODE_ENV === "production") {
+  console.warn(
+    `[socket] NEXT_PUBLIC_SOCKET_URL is not set; falling back to ${DEFAULT_SOCKET_URL}. Set it for this deployment.`,
+  );
+}
+
+const SOCKET_URL = configuredUrl ?? DEFAULT_SOCKET_URL;
 
 let socket: AppSocket | null = null;
 let currentToken: string | null = null;
