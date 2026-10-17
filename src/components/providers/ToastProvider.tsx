@@ -4,7 +4,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -31,10 +33,21 @@ const TONE_STYLES: Record<ToastTone, string> = {
 
 let toastCounter = 0;
 
+/** How long a toast stays on screen before it dismisses itself. */
+const TOAST_DURATION_MS = 5000;
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // One timer per toast so dismissing early cancels the pending auto-dismiss
+  // instead of leaking it, and so unmount can clear whatever is outstanding.
+  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const dismiss = useCallback((id: number) => {
+    const timer = timers.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      timers.current.delete(id);
+    }
     setToasts((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
@@ -43,10 +56,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       toastCounter += 1;
       const id = toastCounter;
       setToasts((prev) => [...prev, { id, message, tone }]);
-      setTimeout(() => dismiss(id), 5000);
+      timers.current.set(
+        id,
+        setTimeout(() => dismiss(id), TOAST_DURATION_MS),
+      );
     },
     [dismiss],
   );
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach((timer) => clearTimeout(timer));
+      pending.clear();
+    };
+  }, []);
 
   const value = useMemo<ToastContextValue>(() => ({ toast }), [toast]);
 
