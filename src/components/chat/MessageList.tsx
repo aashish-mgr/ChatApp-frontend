@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import type { Message } from "../../types/chat";
+import { formatDay, formatTime, GROUP_WINDOW_MS } from "../../lib/format";
 import { MAX_MESSAGE_LENGTH } from "./Composer";
 
 interface MessageListProps {
@@ -16,33 +17,6 @@ interface MessageListProps {
   onRetry: (messageId: string) => void;
   onEdit: (messageId: string, content: string) => Promise<void>;
   onDelete: (messageId: string) => void;
-}
-
-const GROUP_WINDOW_MS = 5 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-const startOfDay = (date: Date): number =>
-  new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime())
-    ? ""
-    : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatDay(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-
-  const diff = Math.round((startOfDay(new Date()) - startOfDay(date)) / DAY_MS);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Yesterday";
-  return date.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 export function MessageList({
