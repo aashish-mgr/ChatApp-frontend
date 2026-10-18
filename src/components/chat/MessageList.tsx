@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import type { Message } from "../../types/chat";
 import { formatDay, formatTime, GROUP_WINDOW_MS } from "../../lib/format";
@@ -14,6 +15,8 @@ interface MessageListProps {
   messages: Message[];
   currentUserId: string;
   isLoading?: boolean;
+  /** Rendered at the tail of the list, e.g. the peer's typing indicator. */
+  children?: ReactNode;
   onRetry: (messageId: string) => void;
   onEdit: (messageId: string, content: string) => Promise<void>;
   onDelete: (messageId: string) => void;
@@ -23,6 +26,7 @@ export function MessageList({
   messages,
   currentUserId,
   isLoading = false,
+  children,
   onRetry,
   onEdit,
   onDelete,
@@ -127,8 +131,9 @@ export function MessageList({
 
   if (messages.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-slate-500">
-        {isLoading ? "Loading messages…" : "No messages yet. Say hello."}
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-slate-500">
+        <p>{isLoading ? "Loading messages…" : "No messages yet. Say hello."}</p>
+        {children}
       </div>
     );
   }
@@ -277,6 +282,7 @@ export function MessageList({
             </div>
           );
         })}
+        {children}
       </div>
     </div>
   );

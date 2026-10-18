@@ -10,13 +10,22 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Message, Room, User } from "../../types/chat";
+import type { Message, Room, TypingState, User } from "../../types/chat";
 import { request } from "../../lib/emit";
 import { getSocket, whenConnected } from "../../lib/socket";
+import {
+  applyTypingState,
+  pruneExpiredTyping,
+  typingUserIdsIn,
+  type TypingStore,
+} from "../../lib/typing";
 import { useAuth } from "./AuthProvider";
 import { useSocket } from "./SocketProvider";
 
 const HISTORY_PAGE_SIZE = 50;
+
+/** How often the typing store is swept for locally-expired signals. */
+const PRUNE_TYPING_INTERVAL_MS = 2000;
 
 interface RoomHistory {
   /** Oldest first, ready for rendering top-to-bottom. */
@@ -60,6 +69,13 @@ interface ChatContextValue {
   leaveRoom: (roomId: string) => Promise<void>;
   /** Deletes the room (and its messages) for every member. */
   deleteRoom: (roomId: string) => Promise<void>;
+  /** Ids of other members currently typing in a room (self excluded). */
+  getTypingUserIds: (roomId: string) => string[];
+  /**
+   * Announces the current user's typing state for a room. Ephemeral and
+   * fire-and-forget: it is a no-op while disconnected and needs no await.
+   */
+  setTyping: (roomId: string, typing: boolean) => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -100,6 +116,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [typingStore, setTypingStore] = useState<TypingStore>(() => ({}));
 
   // Rooms whose initial history has been requested, so we never fetch twice.
   const requestedRooms = useRef<Set<string>>(new Set());
@@ -515,6 +532,33 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [onlineUserIds],
   );
 
+  // Announces the current user's typing state for a room. Fire-and-forget: a
+  // lost signal is harmless (the server clears stale typists on its own
+  // timeout), so it is skipped entirely while disconnected rather than queued.
+  const setTyping = useCallback((roomId: string, typing: boolean) => {
+    if (!roomId) return;
+    const socket = getSocket();
+    if (!socket.connected) return;
+    socket.emit(typing ? "typing:start" : "typing:stop", { roomId });
+  }, []);
+
+  /** Ids of other members currently typing in a room (self excluded). */
+  const getTypingUserIds = useCallback(
+    (roomId: string): string[] =>
+      typingUserIdsIn(typingStore, roomId, currentUserId ?? ""),
+    [typingStore, currentUserId],
+  );
+
+  // Sweep typists whose signal expired locally. The server is the source of
+  // truth and broadcasts explicit stops; this only catches signals lost to a
+  // dropped connection so an indicator can never get stuck on.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTypingStore((prev) => pruneExpiredTyping(prev, Date.now()));
+    }, PRUNE_TYPING_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, []);
+
   // Load the room list and online-user state whenever a session becomes
   // available (and on reconnect). This is the "synchronize with an external
   // system" case effects are for: the socket is the source of truth and the
@@ -685,6 +729,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       });
     };
 
+    const handleTypingState = (state: TypingState) => {
+      // Ignore our own broadcasts; the composer already knows we're typing.
+      if (state.userId === user.id) return;
+      setTypingStore((prev) => applyTypingState(prev, state, Date.now()));
+    };
+
     socket.on("message:new", handleNewMessage);
     socket.on("message:updated", handleUpdatedMessage);
     socket.on("message:deleted", handleDeletedMessage);
@@ -692,6 +742,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     socket.on("room:deleted", handleDeletedRoom);
     socket.on("room:read", handleRoomRead);
     socket.on("presence:update", handlePresenceUpdate);
+    socket.on("typing:state", handleTypingState);
 
     return () => {
       socket.off("message:new", handleNewMessage);
@@ -701,6 +752,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       socket.off("room:deleted", handleDeletedRoom);
       socket.off("room:read", handleRoomRead);
       socket.off("presence:update", handlePresenceUpdate);
+      socket.off("typing:state", handleTypingState);
     };
   }, [user, isConnected, refreshRooms, dropRoom, markRoomRead]);
 
@@ -721,6 +773,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       deleteMessage,
       leaveRoom,
       deleteRoom,
+      getTypingUserIds,
+      setTyping,
     }),
     [
       rooms,
@@ -738,6 +792,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       deleteMessage,
       leaveRoom,
       deleteRoom,
+      getTypingUserIds,
+      setTyping,
     ],
   );
 

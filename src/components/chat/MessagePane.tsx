@@ -9,6 +9,7 @@ import { useSocket } from "../providers/SocketProvider";
 import { useToast } from "../providers/ToastProvider";
 import { MessageList } from "./MessageList";
 import { Composer } from "./Composer";
+import { TypingIndicator } from "./TypingIndicator";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 interface MessagePaneProps {
@@ -30,6 +31,8 @@ export function MessagePane({ room }: MessagePaneProps) {
     leaveRoom,
     deleteRoom,
     isUserOnline,
+    getTypingUserIds,
+    setTyping,
   } = useChat();
   const { toast } = useToast();
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -42,6 +45,11 @@ export function MessagePane({ room }: MessagePaneProps) {
   const peer = room.members.find((member) => member.id !== user?.id);
   const peerName = peer?.username ?? "Conversation";
   const isPeerOnline = peer ? isUserOnline(peer.id) : false;
+  // Other members currently typing here (the current user is excluded).
+  const typingIds = getTypingUserIds(room.id);
+  const typingMembers = room.members.filter((member) =>
+    typingIds.includes(member.id),
+  );
 
   const handleEditMessage = async (messageId: string, content: string) => {
     try {
@@ -206,10 +214,15 @@ export function MessagePane({ room }: MessagePaneProps) {
           onRetry={(messageId) => void retryMessage(room.id, messageId)}
           onEdit={handleEditMessage}
           onDelete={(messageId) => setPendingDelete(messageId)}
-        />
+        >
+          <TypingIndicator users={typingMembers} />
+        </MessageList>
       )}
 
-      <Composer onSend={(content) => void sendMessage(room.id, content)} />
+      <Composer
+        onSend={(content) => void sendMessage(room.id, content)}
+        onTypingChange={(typing) => setTyping(room.id, typing)}
+      />
 
       <ConfirmDialog
         open={pendingDelete !== null}

@@ -62,6 +62,13 @@ export interface PresenceListResponse extends AckResponse {
   onlineUserIds?: string[];
 }
 
+/** Broadcast when a room member starts (`typing: true`) or stops typing. */
+export interface TypingState {
+  roomId: string;
+  userId: string;
+  typing: boolean;
+}
+
 export interface UsersResponse extends AckResponse {
   users?: User[];
 }
@@ -107,6 +114,19 @@ export interface PayloadMap {
   "presence:list": [];
 }
 
+/**
+ * Client -> server events that are fire-and-forget: they carry no ack callback.
+ *
+ * Typing signals are ephemeral and lossy-tolerant (the server clears stale
+ * state on its own timeout), so a dropped signal is harmless — no round-trip
+ * worth waiting on. Kept separate from `PayloadMap`, whose mapped type appends
+ * an acknowledgement callback to every event.
+ */
+export interface FireAndForgetClientEvents {
+  "typing:start": (payload: { roomId: string }) => void;
+  "typing:stop": (payload: { roomId: string }) => void;
+}
+
 /** Acknowledgement payload returned for each client -> server event. */
 export interface AckMap {
   register: AckResponse;
@@ -129,12 +149,14 @@ export type ClientToServerEvents = {
   [K in keyof PayloadMap]: (
     ...args: [...PayloadMap[K], (response: AckMap[K]) => void]
   ) => void;
-};
+} & FireAndForgetClientEvents;
 
 export interface ServerToClientEvents {
   "message:new": (message: Message) => void;
   "message:updated": (message: Message) => void;
   "message:deleted": (payload: { messageId: string }) => void;
+  /** Broadcast when a room member starts or stops typing. */
+  "typing:state": (payload: TypingState) => void;
   "room:new": (payload: { roomId: string }) => void;
   "room:deleted": (payload: { roomId: string }) => void;
   /** Sent to every device of a user when one of them reads a room. */

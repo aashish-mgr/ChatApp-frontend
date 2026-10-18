@@ -1,17 +1,98 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 /** Matches the backend's `message:send` content limit. */
 export const MAX_MESSAGE_LENGTH = 4000;
 
+/**
+ * How long to wait after the last keystroke before announcing "typing". Keeps
+ * the first signal snappy without emitting on every single key.
+ */
+const TYPING_START_DEBOUNCE_MS = 150;
+
+/**
+ * Minimum gap between `typing:start` refreshes while the user keeps typing.
+ * The server drops a typist after its own TTL (~3s), so a refresh well inside
+ * that window keeps the indicator alive without per-keystroke chatter.
+ */
+const TYPING_REFRESH_MS = 2000;
+
 interface ComposerProps {
   onSend: (content: string) => void;
+  /** Reports typing state changes; used to drive the peer's indicator. */
+  onTypingChange: (typing: boolean) => void;
 }
 
-export function Composer({ onSend }: ComposerProps) {
+export function Composer({ onSend, onTypingChange }: ComposerProps) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Typing-signal bookkeeping. Kept in refs because the callbacks read the
+  // latest values without needing to re-bind the textarea handlers.
+  const isTypingRef = useRef(false);
+  const startTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const onTypingChangeRef = useRef(onTypingChange);
+
+  useEffect(() => {
+    onTypingChangeRef.current = onTypingChange;
+  }, [onTypingChange]);
+
+  const stopTyping = () => {
+    if (startTimerRef.current) {
+      clearTimeout(startTimerRef.current);
+      startTimerRef.current = null;
+    }
+    if (refreshTimerRef.current) {
+      clearInterval(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      onTypingChangeRef.current(false);
+    }
+  };
+
+  const startTyping = () => {
+    if (isTypingRef.current) return;
+    isTypingRef.current = true;
+    onTypingChangeRef.current(true);
+    // Keep the signal fresh while the user keeps typing; the server expires a
+    // typist after its TTL, so a refresh inside that window holds it open.
+    refreshTimerRef.current = setInterval(() => {
+      onTypingChangeRef.current(true);
+    }, TYPING_REFRESH_MS);
+  };
+
+  // Cancel any pending timers on unmount, and never leave the peer's indicator
+  // stuck on when the composer goes away.
+  useEffect(
+    () => () => {
+      if (startTimerRef.current) clearTimeout(startTimerRef.current);
+      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+      if (isTypingRef.current) onTypingChangeRef.current(false);
+    },
+    [],
+  );
+
+  const handleInput = (next: string) => {
+    setValue(next);
+    resize();
+
+    if (!next.trim()) {
+      // Empty (or whitespace-only) draft: nothing worth announcing.
+      stopTyping();
+      return;
+    }
+
+    if (isTypingRef.current) return; // Refresh interval already running.
+    if (startTimerRef.current) clearTimeout(startTimerRef.current);
+    startTimerRef.current = setTimeout(() => {
+      startTimerRef.current = null;
+      startTyping();
+    }, TYPING_START_DEBOUNCE_MS);
+  };
 
   const resize = () => {
     const element = textareaRef.current;
@@ -27,6 +108,8 @@ export function Composer({ onSend }: ComposerProps) {
     setValue("");
     const element = textareaRef.current;
     if (element) element.style.height = "auto";
+    // A sent message ends the typing signal immediately.
+    stopTyping();
     // Sending is optimistic: the message renders immediately and reports its
     // own status, so the composer does not need to wait or lock.
     onSend(content);
@@ -56,10 +139,7 @@ export function Composer({ onSend }: ComposerProps) {
             ref={textareaRef}
             rows={1}
             value={value}
-            onChange={(event) => {
-              setValue(event.target.value);
-              resize();
-            }}
+            onChange={(event) => handleInput(event.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type a message…"
             aria-label="Message"
