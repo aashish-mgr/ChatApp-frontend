@@ -211,6 +211,8 @@ export function MessagePane({ room }: MessagePaneProps) {
           messages={messages}
           currentUserId={user?.id ?? ""}
           isLoading={isLoading}
+          hasMore={hasMore}
+          onLoadOlder={() => void loadOlder(room.id)}
           onRetry={(messageId) => void retryMessage(room.id, messageId)}
           onEdit={handleEditMessage}
           onDelete={(messageId) => setPendingDelete(messageId)}

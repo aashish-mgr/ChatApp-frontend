@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -15,6 +16,8 @@ interface MessageListProps {
   messages: Message[];
   currentUserId: string;
   isLoading?: boolean;
+  hasMore?: boolean;
+  onLoadOlder?: () => void;
   /** Rendered at the tail of the list, e.g. the peer's typing indicator. */
   children?: ReactNode;
   onRetry: (messageId: string) => void;
@@ -26,12 +29,15 @@ export function MessageList({
   messages,
   currentUserId,
   isLoading = false,
+  hasMore = false,
+  onLoadOlder,
   children,
   onRetry,
   onEdit,
   onDelete,
 }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
+  const topSentinelRef = useRef<HTMLDivElement>(null);
   const prevScrollHeight = useRef(0);
   const prevFirstId = useRef<string | undefined>(undefined);
   const prevLastId = useRef<string | undefined>(undefined);
@@ -71,6 +77,31 @@ export function MessageList({
     atBottomRef.current = atBottom;
     setIsAtBottom(atBottom);
   };
+
+  useEffect(() => {
+    const sentinel = topSentinelRef.current;
+    const root = listRef.current;
+    if (!sentinel || !root || !hasMore || !onLoadOlder || isLoading) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting) {
+          onLoadOlder();
+        }
+      },
+      {
+        root,
+        rootMargin: "200px 0px 0px 0px",
+        threshold: 0.01,
+      },
+    );
+
+    observer.observe(sentinel);
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMore, onLoadOlder, isLoading, messages.length]);
 
   const scrollToLatest = () => {
     const element = listRef.current;
@@ -155,6 +186,12 @@ export function MessageList({
         onScroll={handleScroll}
         className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-6"
       >
+        {hasMore ? <div ref={topSentinelRef} aria-hidden="true" className="h-1" /> : null}
+        {isLoading && messages.length > 0 ? (
+          <div className="flex justify-center py-2 text-xs text-slate-500">
+            Loading older messages…
+          </div>
+        ) : null}
         {messages.map((message, index) => {
           const previous = index > 0 ? messages[index - 1] : undefined;
           const isMine = message.sender.id === currentUserId;
