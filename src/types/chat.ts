@@ -20,6 +20,18 @@ export interface Credentials {
   password: string;
 }
 
+/** A file uploaded to a conversation. */
+export interface Attachment {
+  id: string;
+  /** Name of the file as it was uploaded. */
+  filename: string;
+  mimeType: string;
+  /** Size in bytes. */
+  size: number;
+  /** Path the file can be fetched from. */
+  url: string;
+}
+
 export interface Message {
   id: string;
   content: string;
@@ -29,6 +41,8 @@ export interface Message {
   senderId: string;
   roomId: string;
   sender: User;
+  /** The file carried by the message, when it has one. */
+  attachment?: Attachment | null;
   /**
    * Client-only delivery state for optimistic messages. Absent on messages
    * that came from the server.
@@ -108,7 +122,14 @@ export interface PayloadMap {
   "room:leave": [string];
   "room:delete": [string];
   "message:history": [{ roomId: string; cursor?: string; limit?: number }];
-  "message:send": [{ roomId: string; content: string }];
+  "message:send": [
+    {
+      roomId: string;
+      content: string;
+      /** The file to attach, uploaded beforehand. */
+      attachmentId?: string;
+    },
+  ];
   "message:update": [{ messageId: string; content: string }];
   "message:delete": [string];
   "presence:list": [];

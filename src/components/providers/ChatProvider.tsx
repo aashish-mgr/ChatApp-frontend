@@ -10,9 +10,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Message, Room, TypingState, User } from "../../types/chat";
+import type { Attachment, Message, Room, TypingState, User } from "../../types/chat";
 import { request } from "../../lib/emit";
 import { getSocket, whenConnected } from "../../lib/socket";
+import {
+  uploadAttachment as uploadAttachmentRequest,
+  type UploadProgress,
+} from "../../lib/api";
 import {
   applyTypingState,
   pruneExpiredTyping,
@@ -60,8 +64,25 @@ interface ChatContextValue {
   /** Opens (or creates) the 1:1 room with a user and returns its id. */
   openRoomWithUser: (target: User) => Promise<string>;
   loadOlder: (roomId: string) => Promise<void>;
-  sendMessage: (roomId: string, content: string) => Promise<void>;
+  /**
+   * Sends a message. `attachment` is the file that was uploaded beforehand;
+   * the message may carry text, a file, or both.
+   */
+  sendMessage: (
+    roomId: string,
+    content: string,
+    attachment?: Attachment | null,
+  ) => Promise<void>;
   retryMessage: (roomId: string, messageId: string) => Promise<void>;
+  /**
+   * Uploads a file to a room and returns it, so it can be attached to the
+   * next message.
+   */
+  uploadAttachment: (
+    roomId: string,
+    file: File,
+    onProgress?: (progress: UploadProgress) => void,
+  ) => Promise<Attachment>;
   /** Edits one of the current user's messages; the room is notified. */
   editMessage: (messageId: string, content: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
@@ -106,7 +127,7 @@ const makeTempId = (): string => {
 };
 
 export function ChatProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { isConnected } = useSocket();
 
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -333,7 +354,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   /** Sends `content` and reconciles the optimistic message with the server. */
   const deliver = useCallback(
-    async (roomId: string, tempId: string, content: string) => {
+    async (
+      roomId: string,
+      tempId: string,
+      content: string,
+      attachmentId?: string,
+    ) => {
       const markFailed = () => {
         setHistory((prev) => {
           const room = prev[roomId];
@@ -354,7 +380,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       try {
         const socket = await whenConnected(getSocket());
-        const res = await request(socket, "message:send", { roomId, content });
+        const res = await request(socket, "message:send", {
+          roomId,
+          content,
+          ...(attachmentId ? { attachmentId } : {}),
+        });
 
         if (res.status !== 200 || !res.messageId) {
           markFailed();
@@ -391,9 +421,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   );
 
   const sendMessage = useCallback(
-    async (roomId: string, content: string) => {
+    async (
+      roomId: string,
+      content: string,
+      attachment?: Attachment | null,
+    ) => {
       const trimmed = content.trim();
-      if (!roomId || !trimmed || !user) return;
+      if (!roomId || (!trimmed && !attachment) || !user) return;
 
       const tempId = makeTempId();
       const optimistic: Message = {
@@ -403,6 +437,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         senderId: user.id,
         roomId,
         sender: user,
+        attachment: attachment ?? null,
         clientStatus: "sending",
       };
 
@@ -414,7 +449,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         };
       });
 
-      await deliver(roomId, tempId, trimmed);
+      await deliver(roomId, tempId, trimmed, attachment?.id);
     },
     [user, deliver],
   );
@@ -442,9 +477,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         };
       });
 
-      await deliver(roomId, messageId, target.content);
+      await deliver(roomId, messageId, target.content, target.attachment?.id);
     },
     [deliver],
+  );
+
+  /**
+   * Uploads a file to a room. The file is stored by the server straight away
+   * and linked to a message when that message is sent.
+   */
+  const uploadAttachment = useCallback(
+    async (
+      roomId: string,
+      file: File,
+      onProgress?: (progress: UploadProgress) => void,
+    ): Promise<Attachment> => {
+      if (!token) {
+        throw new Error("You need to be signed in to upload a file.");
+      }
+
+      return uploadAttachmentRequest(roomId, file, token, onProgress);
+    },
+    [token],
   );
 
   const editMessage = useCallback(async (messageId: string, content: string) => {
@@ -604,8 +658,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       if (!tempId) {
         // The server emits `message:new` before it acks, so the broadcast wins
-        // the race. Match the oldest still-unsent copy with the same text so
-        // the optimistic message is replaced rather than duplicated.
+        // the race. Match the oldest still-unsent copy with the same text and
+        // the same file so the optimistic message is replaced rather than
+        // duplicated.
         const acked = new Set(pendingByServerId.current.values());
         tempId = (
           historyRef.current[message.roomId]?.messages ?? []
@@ -614,7 +669,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             item.clientStatus === "sending" &&
             !acked.has(item.id) &&
             item.senderId === message.senderId &&
-            item.content === message.content,
+            item.content === message.content &&
+            (item.attachment?.id ?? null) === (message.attachment?.id ?? null),
         )?.id;
       }
 
@@ -769,6 +825,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       loadOlder,
       sendMessage,
       retryMessage,
+      uploadAttachment,
       editMessage,
       deleteMessage,
       leaveRoom,
@@ -788,6 +845,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       loadOlder,
       sendMessage,
       retryMessage,
+      uploadAttachment,
       editMessage,
       deleteMessage,
       leaveRoom,

@@ -26,6 +26,7 @@ export function MessagePane({ room }: MessagePaneProps) {
     loadOlder,
     sendMessage,
     retryMessage,
+    uploadAttachment,
     editMessage,
     deleteMessage,
     leaveRoom,
@@ -222,8 +223,14 @@ export function MessagePane({ room }: MessagePaneProps) {
       )}
 
       <Composer
-        onSend={(content) => void sendMessage(room.id, content)}
+        onSend={(content, attachment) =>
+          void sendMessage(room.id, content, attachment)
+        }
         onTypingChange={(typing) => setTyping(room.id, typing)}
+        onAttach={(file, onProgress) =>
+          uploadAttachment(room.id, file, ({ percent }) => onProgress(percent))
+        }
+        onError={(message) => toast(message, "error")}
       />
 
       <ConfirmDialog

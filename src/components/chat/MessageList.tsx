@@ -11,6 +11,7 @@ import {
 import type { Message } from "../../types/chat";
 import { formatDay, formatTime, GROUP_WINDOW_MS } from "../../lib/format";
 import { MAX_MESSAGE_LENGTH } from "./Composer";
+import { AttachmentView } from "./AttachmentView";
 
 interface MessageListProps {
   messages: Message[];
@@ -267,9 +268,15 @@ export function MessageList({
                       </p>
                     ) : null}
 
-                    <p className="break-words whitespace-pre-wrap">
-                      {message.content}
-                    </p>
+                    {message.attachment ? (
+                      <AttachmentView attachment={message.attachment} />
+                    ) : null}
+
+                    {message.content ? (
+                      <p className="break-words whitespace-pre-wrap">
+                        {message.content}
+                      </p>
+                    ) : null}
 
                     <div
                       className={`mt-1 flex items-center justify-end gap-2 text-[10px] ${

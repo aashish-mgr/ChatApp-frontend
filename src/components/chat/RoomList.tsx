@@ -7,6 +7,7 @@ import { useAuth } from "../providers/AuthProvider";
 import { useChat } from "../providers/ChatProvider";
 import { RoomListSkeleton } from "./Skeletons";
 import { activeRoomIdFromPath } from "../../lib/navigation";
+import { messagePreview } from "../../lib/attachments";
 
 function peerOf(room: Room, currentUserId: string | undefined) {
   return room.members.find((member) => member.id !== currentUserId);
@@ -55,7 +56,7 @@ export function RoomList() {
               room.lastMessage.sender.id === user?.id
                 ? "You"
                 : room.lastMessage.sender.username
-            }: ${room.lastMessage.content}`
+            }: ${messagePreview(room.lastMessage)}`
           : "No messages yet";
         const isActive = room.id === activeRoomId;
         const isOnline = peer ? isUserOnline(peer.id) : false;
