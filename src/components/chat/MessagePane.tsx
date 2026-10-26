@@ -47,6 +47,8 @@ export function MessagePane({ room }: MessagePaneProps) {
 
   const { messages, hasMore, isLoading, error } = getRoomHistory(room.id);
   const isGroup = room.isGroup === true;
+  const me = room.members.find((member) => member.id === user?.id);
+  const canDeleteGroup = !isGroup || me?.role === "admin";
   const peer = isGroup
     ? undefined
     : room.members.find((member) => member.id !== user?.id);
@@ -187,14 +189,16 @@ export function MessagePane({ room }: MessagePaneProps) {
                 >
                   {isGroup ? "Leave group" : "Leave conversation"}
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => setPendingRoomAction("delete")}
-                  className="block w-full px-4 py-2 text-left text-sm text-red-400 transition hover:bg-slate-800"
-                >
-                  Delete conversation
-                </button>
+                {canDeleteGroup ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => setPendingRoomAction("delete")}
+                    className="block w-full px-4 py-2 text-left text-sm text-red-400 transition hover:bg-slate-800"
+                  >
+                    {isGroup ? "Delete group" : "Delete conversation"}
+                  </button>
+                ) : null}
               </div>
             </>
           ) : null}
