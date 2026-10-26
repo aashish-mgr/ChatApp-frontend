@@ -52,6 +52,8 @@ export interface Message {
 
 export interface Room {
   id: string;
+  name?: string | null;
+  isGroup?: boolean;
   createdAt: string;
   members: User[];
   lastMessage: Message | null;
@@ -117,6 +119,9 @@ export interface PayloadMap {
   "user:list": [];
   "user:search": [{ query: string }];
   "room:open": [string];
+  "room:createGroup": [{ name: string; memberIds: string[] }];
+  "room:addMember": [{ roomId: string; userId: string }];
+  "room:removeMember": [{ roomId: string; userId: string }];
   "room:list": [];
   "room:read": [string];
   "room:leave": [string];
@@ -155,6 +160,9 @@ export interface AckMap {
   "user:list": UsersResponse;
   "user:search": UsersResponse;
   "room:open": RoomOpenResponse;
+  "room:createGroup": RoomOpenResponse;
+  "room:addMember": AckResponse;
+  "room:removeMember": AckResponse;
   "room:list": RoomsResponse;
   "room:leave": AckResponse;
   "room:delete": AckResponse;
@@ -182,6 +190,8 @@ export interface ServerToClientEvents {
   "room:deleted": (payload: { roomId: string }) => void;
   /** Sent to every device of a user when one of them reads a room. */
   "room:read": (payload: { roomId: string }) => void;
+  "room:memberAdded": (payload: { roomId: string; userId: string }) => void;
+  "room:memberRemoved": (payload: { roomId: string; userId: string }) => void;
   "presence:update": (payload: { userId: string; online: boolean }) => void;
   auth_error: (payload: AuthError) => void;
 }
