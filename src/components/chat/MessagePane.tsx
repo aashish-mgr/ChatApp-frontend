@@ -11,6 +11,7 @@ import { MessageList } from "./MessageList";
 import { Composer } from "./Composer";
 import { TypingIndicator } from "./TypingIndicator";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { GroupMembersDialog } from "./GroupMembersDialog";
 
 interface MessagePaneProps {
   room: Room;
@@ -41,11 +42,22 @@ export function MessagePane({ room }: MessagePaneProps) {
     "leave" | "delete" | null
   >(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
 
   const { messages, hasMore, isLoading, error } = getRoomHistory(room.id);
-  const peer = room.members.find((member) => member.id !== user?.id);
-  const peerName = peer?.username ?? "Conversation";
-  const isPeerOnline = peer ? isUserOnline(peer.id) : false;
+  const isGroup = room.isGroup === true;
+  const peer = isGroup
+    ? undefined
+    : room.members.find((member) => member.id !== user?.id);
+  const title = isGroup ? room.name || "Group" : peer?.username ?? "Conversation";
+  const isPeerOnline = !isGroup && peer ? isUserOnline(peer.id) : false;
+  const subtitle = isGroup
+    ? `${room.members.length} member${room.members.length === 1 ? "" : "s"}`
+    : !isConnected
+      ? "Status unavailable"
+      : isPeerOnline
+        ? "Online"
+        : "Offline";
   // Other members currently typing here (the current user is excluded).
   const typingIds = getTypingUserIds(room.id);
   const typingMembers = room.members.filter((member) =>
@@ -87,10 +99,10 @@ export function MessagePane({ room }: MessagePaneProps) {
     try {
       if (action === "leave") {
         await leaveRoom(room.id);
-        toast("You left the conversation.", "success");
+        toast(isGroup ? "You left the group." : "You left the conversation.", "success");
       } else {
         await deleteRoom(room.id);
-        toast("Conversation deleted.", "success");
+        toast(isGroup ? "Group deleted." : "Conversation deleted.", "success");
       }
       router.push("/");
     } catch (error) {
@@ -114,7 +126,7 @@ export function MessagePane({ room }: MessagePaneProps) {
         </button>
         <span className="relative shrink-0">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold uppercase text-slate-200">
-            {peerName.charAt(0)}
+            {title.charAt(0)}
           </span>
           {isPeerOnline ? (
             <span
@@ -124,16 +136,8 @@ export function MessagePane({ room }: MessagePaneProps) {
           ) : null}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-100">
-            {peerName}
-          </p>
-          <p className="text-xs text-slate-500">
-            {!isConnected
-              ? "Status unavailable"
-              : isPeerOnline
-                ? "Online"
-                : "Offline"}
-          </p>
+          <p className="truncate text-sm font-semibold text-slate-100">{title}</p>
+          <p className="text-xs text-slate-500">{subtitle}</p>
         </div>
 
         <div className="relative shrink-0">
@@ -161,13 +165,26 @@ export function MessagePane({ room }: MessagePaneProps) {
                 role="menu"
                 className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-slate-800 bg-slate-900 py-1 shadow-xl"
               >
+                {isGroup ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setMembersOpen(true);
+                    }}
+                    className="block w-full px-4 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-800"
+                  >
+                    Group members
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   role="menuitem"
                   onClick={() => setPendingRoomAction("leave")}
                   className="block w-full px-4 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-800"
                 >
-                  Leave conversation
+                  {isGroup ? "Leave group" : "Leave conversation"}
                 </button>
                 <button
                   type="button"
@@ -245,10 +262,20 @@ export function MessagePane({ room }: MessagePaneProps) {
 
       <ConfirmDialog
         open={pendingRoomAction !== null}
-        title={pendingRoomAction === "leave" ? "Leave conversation" : "Delete conversation"}
+        title={
+          pendingRoomAction === "leave"
+            ? isGroup
+              ? "Leave group"
+              : "Leave conversation"
+            : isGroup
+              ? "Delete group"
+              : "Delete conversation"
+        }
         message={
           pendingRoomAction === "leave"
-            ? "You'll stop receiving messages here. You can reopen the conversation later."
+            ? isGroup
+              ? "You'll stop receiving messages from this group. You can be added back later."
+              : "You'll stop receiving messages here. You can reopen the conversation later."
             : "The conversation and all of its messages will be deleted for everyone. This can't be undone."
         }
         confirmLabel={pendingRoomAction === "leave" ? "Leave" : "Delete"}
@@ -256,6 +283,10 @@ export function MessagePane({ room }: MessagePaneProps) {
         onConfirm={() => void confirmRoomAction()}
         onCancel={() => setPendingRoomAction(null)}
       />
+
+      {membersOpen && isGroup ? (
+        <GroupMembersDialog room={room} onClose={() => setMembersOpen(false)} />
+      ) : null}
     </div>
   );
 }
