@@ -13,6 +13,8 @@ export interface User {
   username: string;
   /** ISO timestamp of account creation, when the server provides it. */
   createdAt?: string;
+  /** Role in a group chat (`admin` or `member`), when provided. */
+  role?: string;
 }
 
 export interface Credentials {
