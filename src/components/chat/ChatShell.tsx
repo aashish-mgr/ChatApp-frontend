@@ -6,6 +6,7 @@ import { useAuth } from "../providers/AuthProvider";
 import { useSocket } from "../providers/SocketProvider";
 import { RoomList } from "./RoomList";
 import { NewChatDialog } from "./NewChatDialog";
+import { CreateGroupDialog } from "./CreateGroupDialog";
 import { activeRoomIdFromPath } from "../../lib/navigation";
 
 /** "Mar 2026" style label for the account's creation date, or null if invalid. */
@@ -20,6 +21,7 @@ export function ChatShell({ children }: { children: ReactNode }) {
   const { isConnected } = useSocket();
   const pathname = usePathname();
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
 
   const isRoomOpen = activeRoomIdFromPath(pathname) !== null;
   const joinedLabel = user?.createdAt ? formatJoined(user.createdAt) : null;
@@ -65,13 +67,22 @@ export function ChatShell({ children }: { children: ReactNode }) {
           <h2 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">
             Chats
           </h2>
-          <button
-            type="button"
-            onClick={() => setIsNewChatOpen(true)}
-            className="rounded-lg bg-sky-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-sky-400"
-          >
-            New
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setIsCreateGroupOpen(true)}
+              className="rounded-lg border border-slate-700 px-2 py-1 text-xs font-medium text-slate-300 transition hover:border-slate-500 hover:text-white"
+            >
+              Group
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsNewChatOpen(true)}
+              className="rounded-lg bg-sky-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-sky-400"
+            >
+              New
+            </button>
+          </div>
         </div>
 
         <RoomList />
@@ -98,6 +109,9 @@ export function ChatShell({ children }: { children: ReactNode }) {
 
       {isNewChatOpen ? (
         <NewChatDialog onClose={() => setIsNewChatOpen(false)} />
+      ) : null}
+      {isCreateGroupOpen ? (
+        <CreateGroupDialog onClose={() => setIsCreateGroupOpen(false)} />
       ) : null}
     </div>
   );
