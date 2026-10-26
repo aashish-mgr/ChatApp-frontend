@@ -7,6 +7,7 @@ import { useAuth } from "../providers/AuthProvider";
 import { useChat } from "../providers/ChatProvider";
 import { useSocket } from "../providers/SocketProvider";
 import { useToast } from "../providers/ToastProvider";
+import { roomDisplayName } from "../../lib/rooms";
 import { MessageList } from "./MessageList";
 import { Composer } from "./Composer";
 import { TypingIndicator } from "./TypingIndicator";
@@ -49,7 +50,7 @@ export function MessagePane({ room }: MessagePaneProps) {
   const peer = isGroup
     ? undefined
     : room.members.find((member) => member.id !== user?.id);
-  const title = isGroup ? room.name || "Group" : peer?.username ?? "Conversation";
+  const title = roomDisplayName(room, user?.id);
   const isPeerOnline = !isGroup && peer ? isUserOnline(peer.id) : false;
   const subtitle = isGroup
     ? `${room.members.length} member${room.members.length === 1 ? "" : "s"}`

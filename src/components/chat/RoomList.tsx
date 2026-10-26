@@ -8,6 +8,7 @@ import { useChat } from "../providers/ChatProvider";
 import { RoomListSkeleton } from "./Skeletons";
 import { activeRoomIdFromPath } from "../../lib/navigation";
 import { messagePreview } from "../../lib/attachments";
+import { roomDisplayName } from "../../lib/rooms";
 
 function peerOf(room: Room, currentUserId: string | undefined) {
   return room.members.find((member) => member.id !== currentUserId);
@@ -51,9 +52,7 @@ export function RoomList() {
       {rooms.map((room) => {
         const isGroup = room.isGroup === true;
         const peer = isGroup ? undefined : peerOf(room, user?.id);
-        const name = isGroup
-          ? room.name || "Group"
-          : peer?.username ?? "Unknown";
+        const name = roomDisplayName(room, user?.id);
         const preview = room.lastMessage
           ? `${
               room.lastMessage.sender.id === user?.id
