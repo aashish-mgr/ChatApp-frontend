@@ -63,6 +63,12 @@ interface ChatContextValue {
   retryHistory: (roomId: string) => Promise<void>;
   /** Opens (or creates) the 1:1 room with a user and returns its id. */
   openRoomWithUser: (target: User) => Promise<string>;
+  /** Creates a group chat and returns its id. */
+  createGroup: (name: string, memberIds: string[]) => Promise<string>;
+  /** Adds a member to a group chat (admin only). */
+  addGroupMember: (roomId: string, userId: string) => Promise<void>;
+  /** Removes a member from a group chat (admin or self). */
+  removeGroupMember: (roomId: string, userId: string) => Promise<void>;
   loadOlder: (roomId: string) => Promise<void>;
   /**
    * Sends a message. `attachment` is the file that was uploaded beforehand;
@@ -329,13 +335,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       const roomId = res.roomId;
       if (user) {
-        // Show the conversation immediately; refreshRooms() reconciles.
         setRooms((prev) =>
           prev.some((room) => room.id === roomId)
             ? prev
             : [
                 {
                   id: roomId,
+                  name: null,
+                  isGroup: false,
                   createdAt: new Date().toISOString(),
                   members: [user, target],
                   lastMessage: null,
@@ -350,6 +357,49 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       return roomId;
     },
     [user, refreshRooms],
+  );
+
+  const createGroup = useCallback(
+    async (name: string, memberIds: string[]) => {
+      const socket = await whenConnected(getSocket());
+      const res = await request(socket, "room:createGroup", {
+        name,
+        memberIds,
+      });
+      if (res.status !== 200 || !res.roomId) {
+        throw new Error(res.message || "Could not create the group.");
+      }
+      void refreshRooms();
+      return res.roomId;
+    },
+    [refreshRooms],
+  );
+
+  const addGroupMember = useCallback(
+    async (roomId: string, userId: string) => {
+      const socket = await whenConnected(getSocket());
+      const res = await request(socket, "room:addMember", { roomId, userId });
+      if (res.status !== 200) {
+        throw new Error(res.message || "Could not add member.");
+      }
+      void refreshRooms();
+    },
+    [refreshRooms],
+  );
+
+  const removeGroupMember = useCallback(
+    async (roomId: string, userId: string) => {
+      const socket = await whenConnected(getSocket());
+      const res = await request(socket, "room:removeMember", {
+        roomId,
+        userId,
+      });
+      if (res.status !== 200) {
+        throw new Error(res.message || "Could not remove member.");
+      }
+      void refreshRooms();
+    },
+    [refreshRooms],
   );
 
   /** Sends `content` and reconciles the optimistic message with the server. */
@@ -764,6 +814,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       dropRoom(roomId);
     };
 
+    const handleMemberAdded = () => {
+      void refreshRooms();
+    };
+
+    const handleMemberRemoved = ({ roomId, userId }: { roomId: string; userId: string }) => {
+      if (user && userId === user.id) {
+        dropRoom(roomId);
+      } else {
+        void refreshRooms();
+      }
+    };
+
     // One of our devices read a room: clear the badge here too.
     const handleRoomRead = ({ roomId }: { roomId: string }) => {
       setRooms((prev) => clearUnread(prev, roomId));
@@ -796,6 +858,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     socket.on("message:deleted", handleDeletedMessage);
     socket.on("room:new", handleNewRoom);
     socket.on("room:deleted", handleDeletedRoom);
+    socket.on("room:memberAdded", handleMemberAdded);
+    socket.on("room:memberRemoved", handleMemberRemoved);
     socket.on("room:read", handleRoomRead);
     socket.on("presence:update", handlePresenceUpdate);
     socket.on("typing:state", handleTypingState);
@@ -806,6 +870,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       socket.off("message:deleted", handleDeletedMessage);
       socket.off("room:new", handleNewRoom);
       socket.off("room:deleted", handleDeletedRoom);
+      socket.off("room:memberAdded", handleMemberAdded);
+      socket.off("room:memberRemoved", handleMemberRemoved);
       socket.off("room:read", handleRoomRead);
       socket.off("presence:update", handlePresenceUpdate);
       socket.off("typing:state", handleTypingState);
@@ -822,6 +888,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       getRoomHistory,
       retryHistory,
       openRoomWithUser,
+      createGroup,
+      addGroupMember,
+      removeGroupMember,
       loadOlder,
       sendMessage,
       retryMessage,
@@ -842,6 +911,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       getRoomHistory,
       retryHistory,
       openRoomWithUser,
+      createGroup,
+      addGroupMember,
+      removeGroupMember,
       loadOlder,
       sendMessage,
       retryMessage,
