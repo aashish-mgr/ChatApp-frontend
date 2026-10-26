@@ -49,8 +49,11 @@ export function RoomList() {
   return (
     <ul className="flex-1 overflow-y-auto">
       {rooms.map((room) => {
-        const peer = peerOf(room, user?.id);
-        const name = peer?.username ?? "Unknown";
+        const isGroup = room.isGroup === true;
+        const peer = isGroup ? undefined : peerOf(room, user?.id);
+        const name = isGroup
+          ? room.name || "Group"
+          : peer?.username ?? "Unknown";
         const preview = room.lastMessage
           ? `${
               room.lastMessage.sender.id === user?.id
@@ -59,7 +62,7 @@ export function RoomList() {
             }: ${messagePreview(room.lastMessage)}`
           : "No messages yet";
         const isActive = room.id === activeRoomId;
-        const isOnline = peer ? isUserOnline(peer.id) : false;
+        const isOnline = !isGroup && peer ? isUserOnline(peer.id) : false;
 
         return (
           <li key={room.id}>
